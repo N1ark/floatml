@@ -2,6 +2,7 @@
 
 (* ============================================================================
  * F16 - Half-precision (16-bit) floating-point
+ * Uses native _Float16 when available, IEEE-754 compliant software fallback otherwise
  * ============================================================================ *)
 module F16 = struct
   type t
@@ -15,6 +16,7 @@ module F16 = struct
   external to_bits : t -> int = "caml_f16_to_bits"
   external of_bits : int -> t = "caml_f16_of_bits"
   external to_float : t -> float = "caml_f16_to_float"
+  external is_native : unit -> bool = "caml_f16_is_native"
 
   let to_z t = Z.of_int (to_bits t)
 
@@ -101,13 +103,7 @@ module F128 = struct
     let low = to_bits_low t in
     let high = to_bits_high t in
     (* Convert low as unsigned 64-bit integer *)
-    let z_low = 
-      if Int64.compare low 0L >= 0 then
-        Z.of_int64 low
-      else
-        (* low is negative in two's complement, so add 2^64 *)
-        Z.add (Z.of_int64 low) (Z.shift_left Z.one 64)
-    in
+    let z_low = Z.of_int64_unsigned low in
     (* high can be treated as signed since it's the upper bits *)
     let z_high = Z.of_int64 high in
     Z.add (Z.shift_left z_high 64) z_low

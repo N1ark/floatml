@@ -51,6 +51,7 @@ let assert_z_eq msg expected actual =
 
 let test_f16 () =
   print_endline "\n=== Testing F16 (half-precision) ===";
+  Printf.printf "  (F16 using native hardware: %b)\n" (F16.is_native ());
   
   let a = F16.of_string "3.5" in
   let b = F16.of_string "1.5" in
@@ -81,6 +82,114 @@ let test_f16 () =
   assert_float_eq ~eps:epsilon_f16 "F16 infix -" 2.0 (to_float (a - b));
   assert_float_eq ~eps:epsilon_f16 "F16 infix *" 5.25 (to_float (a * b));
   assert_float_eq ~eps:epsilon_f16 "F16 infix /" 2.333 (to_float (a / b))
+
+(** Test IEEE-754 compliance for F16 *)
+let test_f16_ieee754 () =
+  print_endline "\n=== Testing F16 IEEE-754 compliance ===";
+  
+  (* Test well-known bit patterns *)
+  
+  (* Zero: 0x0000 *)
+  let zero = F16.of_bits 0x0000 in
+  assert_float_eq "F16 +0 value" 0.0 (F16.to_float zero);
+  assert_int_eq "F16 +0 bits" 0x0000 (F16.to_bits zero);
+  
+  (* Negative zero: 0x8000 *)
+  let neg_zero = F16.of_bits 0x8000 in
+  assert_float_eq "F16 -0 value" 0.0 (F16.to_float neg_zero);
+  assert_int_eq "F16 -0 bits" 0x8000 (F16.to_bits neg_zero);
+  
+  (* One: 0x3C00 (exp=15, mant=0 -> 2^0 * 1.0 = 1.0) *)
+  let one = F16.of_bits 0x3C00 in
+  assert_float_eq "F16 1.0 value" 1.0 (F16.to_float one);
+  assert_int_eq "F16 1.0 bits" 0x3C00 (F16.to_bits one);
+  
+  (* Negative one: 0xBC00 *)
+  let neg_one = F16.of_bits 0xBC00 in
+  assert_float_eq "F16 -1.0 value" (-1.0) (F16.to_float neg_one);
+  assert_int_eq "F16 -1.0 bits" 0xBC00 (F16.to_bits neg_one);
+  
+  (* Two: 0x4000 (exp=16, mant=0 -> 2^1 * 1.0 = 2.0) *)
+  let two = F16.of_bits 0x4000 in
+  assert_float_eq "F16 2.0 value" 2.0 (F16.to_float two);
+  assert_int_eq "F16 2.0 bits" 0x4000 (F16.to_bits two);
+  
+  (* Infinity: 0x7C00 *)
+  let inf = F16.of_bits 0x7C00 in
+  assert_true "F16 +inf is infinity" (is_inf (F16.to_float inf));
+  assert_int_eq "F16 +inf bits" 0x7C00 (F16.to_bits inf);
+  
+  (* Negative infinity: 0xFC00 *)
+  let neg_inf = F16.of_bits 0xFC00 in
+  assert_true "F16 -inf is infinity" (is_inf (F16.to_float neg_inf));
+  assert_int_eq "F16 -inf bits" 0xFC00 (F16.to_bits neg_inf);
+  
+  (* NaN: 0x7E00 (quiet NaN) *)
+  let nan_val = F16.of_bits 0x7E00 in
+  assert_true "F16 NaN is NaN" (is_nan (F16.to_float nan_val));
+  
+  (* Smallest positive normal: 0x0400 (exp=1, mant=0 -> 2^-14) *)
+  let min_normal = F16.of_bits 0x0400 in
+  let expected_min_normal = ldexp 1.0 (-14) in  (* 2^-14 ≈ 6.103515625e-05 *)
+  assert_float_eq ~eps:1e-10 "F16 min normal value" expected_min_normal (F16.to_float min_normal);
+  assert_int_eq "F16 min normal bits" 0x0400 (F16.to_bits min_normal);
+  
+  (* Largest normal: 0x7BFF (exp=30, mant=0x3FF -> (2 - 2^-10) * 2^15 = 65504) *)
+  let max_normal = F16.of_bits 0x7BFF in
+  assert_float_eq ~eps:1.0 "F16 max normal value" 65504.0 (F16.to_float max_normal);
+  assert_int_eq "F16 max normal bits" 0x7BFF (F16.to_bits max_normal);
+  
+  (* Smallest positive denormal: 0x0001 (exp=0, mant=1 -> 2^-24) *)
+  let min_denormal = F16.of_bits 0x0001 in
+  let expected_min_denormal = ldexp 1.0 (-24) in  (* 2^-24 ≈ 5.96e-08 *)
+  assert_float_eq ~eps:1e-12 "F16 min denormal value" expected_min_denormal (F16.to_float min_denormal);
+  assert_int_eq "F16 min denormal bits" 0x0001 (F16.to_bits min_denormal);
+  
+  (* Largest denormal: 0x03FF (exp=0, mant=0x3FF -> (2^-14) * (1 - 2^-10)) *)
+  let max_denormal = F16.of_bits 0x03FF in
+  let expected_max_denormal = ldexp 1.0 (-14) *. (1.0 -. ldexp 1.0 (-10)) in
+  assert_float_eq ~eps:1e-10 "F16 max denormal value" expected_max_denormal (F16.to_float max_denormal);
+  assert_int_eq "F16 max denormal bits" 0x03FF (F16.to_bits max_denormal);
+  
+  (* Test rounding: round to nearest, ties to even *)
+  (* 1.0 + 2^-11 should round to 1.0 (round down, ties to even) *)
+  (* 1.0 + 2^-11 + 2^-12 should round to 1.0 + 2^-10 (round up) *)
+  
+  (* Test that 1.5 is exact: 0x3E00 *)
+  let one_half = F16.of_string "1.5" in
+  assert_int_eq "F16 1.5 bits" 0x3E00 (F16.to_bits one_half);
+  
+  (* Test that 0.5 is exact: 0x3800 *)
+  let half = F16.of_string "0.5" in
+  assert_int_eq "F16 0.5 bits" 0x3800 (F16.to_bits half);
+  
+  (* Test overflow to infinity *)
+  let big = F16.of_string "100000.0" in
+  assert_true "F16 overflow to inf" (is_inf (F16.to_float big));
+  
+  (* Test underflow to zero *)
+  let tiny = F16.of_string "1e-10" in
+  assert_float_eq "F16 underflow to zero" 0.0 (F16.to_float tiny);
+  
+  (* Test arithmetic with special values *)
+  let inf16 = F16.of_bits 0x7C00 in
+  let zero16 = F16.of_bits 0x0000 in
+  let one16 = F16.of_bits 0x3C00 in
+  
+  (* inf + 1 = inf *)
+  assert_true "F16 inf + 1 = inf" (is_inf (F16.to_float (F16.add inf16 one16)));
+  
+  (* inf - inf = NaN *)
+  assert_true "F16 inf - inf = NaN" (is_nan (F16.to_float (F16.sub inf16 inf16)));
+  
+  (* 0 * inf = NaN *)
+  assert_true "F16 0 * inf = NaN" (is_nan (F16.to_float (F16.mul zero16 inf16)));
+  
+  (* 1 / 0 = inf *)
+  assert_true "F16 1 / 0 = inf" (is_inf (F16.to_float (F16.div one16 zero16)));
+  
+  (* 0 / 0 = NaN *)
+  assert_true "F16 0 / 0 = NaN" (is_nan (F16.to_float (F16.div zero16 zero16)))
 
 let test_f32 () =
   print_endline "\n=== Testing F32 (single-precision) ===";
@@ -236,6 +345,7 @@ let () =
   print_endline "Running floats library tests...";
   
   test_f16 ();
+  test_f16_ieee754 ();
   test_f32 ();
   test_f64 ();
   test_f128 ();

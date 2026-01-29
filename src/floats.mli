@@ -1,4 +1,7 @@
-(** F16 - IEEE 754 half-precision (16-bit) floating-point type *)
+(** F16 - IEEE 754 half-precision (16-bit) floating-point type 
+    
+    Uses native _Float16 hardware support when available (modern ARM64, x86 with AVX512-FP16).
+    Falls back to IEEE-754 compliant software emulation with proper rounding otherwise. *)
 module F16 : sig
   type t
   
@@ -21,6 +24,9 @@ module F16 : sig
   
   (** Convert to OCaml float for display *)
   val to_float : t -> float
+  
+  (** Returns true if using native _Float16 hardware support *)
+  val is_native : unit -> bool
   
   (** Infix operators *)
   val ( + ) : t -> t -> t

@@ -1,6 +1,8 @@
 /*
  * C stubs for f16, f32, f64, f128 float types
  * Provides OCaml bindings for arithmetic operations and bit conversions
+ * 
+ * IEEE 754 compliant implementations with native hardware support where available.
  */
 
 #include <caml/mlvalues.h>
@@ -19,45 +21,175 @@
 /* ============================================================================
  * F16 (half-precision) implementation
  * IEEE 754 half-precision: 1 sign bit, 5 exponent bits, 10 mantissa bits
+ * 
+ * Uses native _Float16 when available (GCC 12+, Clang 15+ on supported archs)
+ * Falls back to IEEE-754 compliant software implementation otherwise.
  * ============================================================================ */
+
+/* Detect native _Float16 support */
+#if defined(__FLT16_MANT_DIG__) && defined(__clang__)
+    /* Clang with _Float16 support (typically ARM64, x86 with SSE) */
+    #define HAS_NATIVE_FLOAT16 1
+#elif defined(__FLT16_MANT_DIG__) && defined(__GNUC__) && __GNUC__ >= 12
+    /* GCC 12+ with _Float16 support */
+    #define HAS_NATIVE_FLOAT16 1
+#elif defined(__ARM_FP16_FORMAT_IEEE)
+    /* ARM with IEEE half-precision */
+    #define HAS_NATIVE_FLOAT16 1
+#else
+    #define HAS_NATIVE_FLOAT16 0
+#endif
+
+#if HAS_NATIVE_FLOAT16
+
+/* ---- Native _Float16 implementation ---- */
+typedef _Float16 f16_native_t;
+typedef uint16_t f16_bits_t;
+
+static inline f16_bits_t f16_to_bits_native(f16_native_t f) {
+    f16_bits_t bits;
+    memcpy(&bits, &f, sizeof(bits));
+    return bits;
+}
+
+static inline f16_native_t f16_from_bits_native(f16_bits_t bits) {
+    f16_native_t f;
+    memcpy(&f, &bits, sizeof(f));
+    return f;
+}
+
+static inline float f16_to_float_native(f16_native_t f) {
+    return (float)f;
+}
+
+static inline f16_native_t f16_from_string_native(const char *s) {
+    float f = strtof(s, NULL);
+    return (f16_native_t)f;
+}
+
+/* Use native type for storage */
+typedef f16_native_t f16_t;
+
+#define F16_TO_BITS(f) f16_to_bits_native(f)
+#define F16_FROM_BITS(b) f16_from_bits_native(b)
+#define F16_TO_FLOAT(f) f16_to_float_native(f)
+#define F16_ADD(a, b) ((f16_t)((a) + (b)))
+#define F16_SUB(a, b) ((f16_t)((a) - (b)))
+#define F16_MUL(a, b) ((f16_t)((a) * (b)))
+#define F16_DIV(a, b) ((f16_t)((a) / (b)))
+#define F16_REM(a, b) ((f16_t)fmodf((float)(a), (float)(b)))
+#define F16_FROM_STRING(s) f16_from_string_native(s)
+
+#else
+
+/* ---- Software IEEE-754 compliant implementation ---- */
+
+/*
+ * IEEE 754 half-precision format:
+ * - Sign: 1 bit (bit 15)
+ * - Exponent: 5 bits (bits 14-10), bias = 15
+ * - Mantissa: 10 bits (bits 9-0), implicit leading 1 for normalized
+ * 
+ * Special values:
+ * - Zero: exp=0, mant=0 (signed)
+ * - Denormal: exp=0, mant!=0
+ * - Infinity: exp=31, mant=0 (signed)
+ * - NaN: exp=31, mant!=0
+ */
 
 typedef uint16_t f16_t;
 
-/* Convert float to f16 */
-static f16_t float_to_f16(float f) {
+/* 
+ * Convert float32 to float16 with proper IEEE-754 rounding (round to nearest, ties to even)
+ */
+static f16_t f16_from_float_soft(float f) {
     uint32_t bits;
     memcpy(&bits, &f, sizeof(bits));
     
     uint32_t sign = (bits >> 31) & 0x1;
-    int32_t exp = ((bits >> 23) & 0xFF) - 127;
+    int32_t exp = (int32_t)((bits >> 23) & 0xFF) - 127;
     uint32_t mant = bits & 0x7FFFFF;
     
     uint16_t result;
     
+    /* Handle special cases */
     if (exp == 128) {
-        /* Inf or NaN */
-        result = (sign << 15) | (0x1F << 10) | (mant ? (mant >> 13) | 0x1 : 0);
+        /* Infinity or NaN */
+        if (mant == 0) {
+            /* Infinity */
+            result = (sign << 15) | (0x1F << 10);
+        } else {
+            /* NaN - preserve quiet/signaling bit and some payload */
+            uint16_t nan_mant = (mant >> 13) | 0x200;  /* Ensure it's still NaN */
+            result = (sign << 15) | (0x1F << 10) | (nan_mant & 0x3FF);
+        }
     } else if (exp > 15) {
         /* Overflow to infinity */
         result = (sign << 15) | (0x1F << 10);
+    } else if (exp < -24) {
+        /* Underflow to zero (too small even for denormal) */
+        result = sign << 15;
     } else if (exp < -14) {
-        /* Underflow or denormal */
-        if (exp < -24) {
-            result = sign << 15;
-        } else {
-            mant |= 0x800000;
-            int shift = -exp - 14 + 13;
-            result = (sign << 15) | (mant >> shift);
+        /* Denormalized number */
+        /* Add implicit leading 1 */
+        mant |= 0x800000;
+        
+        /* Calculate shift amount: we need to shift right to fit in 10 bits
+         * For exp=-15, shift by 14 (one more than normal)
+         * For exp=-24, shift by 23 (mant becomes 1 bit) */
+        int shift = -14 - exp + 13;  /* 13 = 23 - 10 (f32 mant bits - f16 mant bits) */
+        
+        /* Round to nearest, ties to even */
+        uint32_t round_bit = 1U << (shift - 1);
+        uint32_t sticky_mask = round_bit - 1;
+        uint32_t sticky = (mant & sticky_mask) != 0;
+        uint32_t round = (mant >> (shift - 1)) & 1;
+        uint32_t lsb = (mant >> shift) & 1;
+        
+        uint16_t mant16 = mant >> shift;
+        
+        /* Round to nearest, ties to even */
+        if (round && (sticky || lsb)) {
+            mant16++;
         }
+        
+        result = (sign << 15) | mant16;
     } else {
-        result = (sign << 15) | ((exp + 15) << 10) | (mant >> 13);
+        /* Normalized number */
+        /* Round to nearest, ties to even */
+        /* We're dropping 13 bits (23 - 10) */
+        uint32_t round_bit = 1U << 12;
+        uint32_t sticky_mask = round_bit - 1;
+        uint32_t sticky = (mant & sticky_mask) != 0;
+        uint32_t round = (mant >> 12) & 1;
+        uint32_t lsb = (mant >> 13) & 1;
+        
+        uint16_t mant16 = mant >> 13;
+        uint16_t exp16 = exp + 15;
+        
+        /* Round to nearest, ties to even */
+        if (round && (sticky || lsb)) {
+            mant16++;
+            if (mant16 == 0x400) {
+                /* Mantissa overflow, increment exponent */
+                mant16 = 0;
+                exp16++;
+                if (exp16 >= 31) {
+                    /* Overflow to infinity */
+                    result = (sign << 15) | (0x1F << 10);
+                    return result;
+                }
+            }
+        }
+        
+        result = (sign << 15) | (exp16 << 10) | mant16;
     }
     
     return result;
 }
 
-/* Convert f16 to float */
-static float f16_to_float(f16_t h) {
+/* Convert float16 to float32 (exact, no rounding needed) */
+static float f16_to_float_soft(f16_t h) {
     uint32_t sign = (h >> 15) & 0x1;
     uint32_t exp = (h >> 10) & 0x1F;
     uint32_t mant = h & 0x3FF;
@@ -66,27 +198,46 @@ static float f16_to_float(f16_t h) {
     
     if (exp == 0) {
         if (mant == 0) {
+            /* Signed zero */
             result = sign << 31;
         } else {
-            /* Denormalized */
-            exp = 1;
+            /* Denormalized - normalize it */
+            /* Count leading zeros in mantissa and normalize */
+            int shift = 0;
             while (!(mant & 0x400)) {
                 mant <<= 1;
-                exp--;
+                shift++;
             }
-            mant &= 0x3FF;
-            result = (sign << 31) | ((exp + 127 - 15) << 23) | (mant << 13);
+            mant &= 0x3FF;  /* Remove the implicit 1 we just shifted in */
+            int32_t new_exp = 1 - 15 + 127 - shift;  /* Adjust exponent */
+            result = (sign << 31) | (new_exp << 23) | (mant << 13);
         }
     } else if (exp == 0x1F) {
+        /* Infinity or NaN */
         result = (sign << 31) | (0xFF << 23) | (mant << 13);
     } else {
-        result = (sign << 31) | ((exp + 127 - 15) << 23) | (mant << 13);
+        /* Normalized number */
+        int32_t new_exp = exp - 15 + 127;
+        result = (sign << 31) | (new_exp << 23) | (mant << 13);
     }
     
     float f;
     memcpy(&f, &result, sizeof(f));
     return f;
 }
+
+#define F16_TO_BITS(f) (f)
+#define F16_FROM_BITS(b) ((f16_t)(b))
+#define F16_FROM_FLOAT(f) f16_from_float_soft(f)
+#define F16_TO_FLOAT(f) f16_to_float_soft(f)
+#define F16_ADD(a, b) f16_from_float_soft(f16_to_float_soft(a) + f16_to_float_soft(b))
+#define F16_SUB(a, b) f16_from_float_soft(f16_to_float_soft(a) - f16_to_float_soft(b))
+#define F16_MUL(a, b) f16_from_float_soft(f16_to_float_soft(a) * f16_to_float_soft(b))
+#define F16_DIV(a, b) f16_from_float_soft(f16_to_float_soft(a) / f16_to_float_soft(b))
+#define F16_REM(a, b) f16_from_float_soft(fmodf(f16_to_float_soft(a), f16_to_float_soft(b)))
+#define F16_FROM_STRING(s) f16_from_float_soft(strtof(s, NULL))
+
+#endif /* HAS_NATIVE_FLOAT16 */
 
 /* F16 custom block operations */
 static struct custom_operations f16_ops = {
@@ -110,58 +261,57 @@ static value alloc_f16(f16_t val) {
 
 CAMLprim value caml_f16_of_string(value s) {
     CAMLparam1(s);
-    float f = strtof(String_val(s), NULL);
-    CAMLreturn(alloc_f16(float_to_f16(f)));
+    CAMLreturn(alloc_f16(F16_FROM_STRING(String_val(s))));
 }
 
 CAMLprim value caml_f16_add(value a, value b) {
     CAMLparam2(a, b);
-    float fa = f16_to_float(F16_val(a));
-    float fb = f16_to_float(F16_val(b));
-    CAMLreturn(alloc_f16(float_to_f16(fa + fb)));
+    CAMLreturn(alloc_f16(F16_ADD(F16_val(a), F16_val(b))));
 }
 
 CAMLprim value caml_f16_sub(value a, value b) {
     CAMLparam2(a, b);
-    float fa = f16_to_float(F16_val(a));
-    float fb = f16_to_float(F16_val(b));
-    CAMLreturn(alloc_f16(float_to_f16(fa - fb)));
+    CAMLreturn(alloc_f16(F16_SUB(F16_val(a), F16_val(b))));
 }
 
 CAMLprim value caml_f16_mul(value a, value b) {
     CAMLparam2(a, b);
-    float fa = f16_to_float(F16_val(a));
-    float fb = f16_to_float(F16_val(b));
-    CAMLreturn(alloc_f16(float_to_f16(fa * fb)));
+    CAMLreturn(alloc_f16(F16_MUL(F16_val(a), F16_val(b))));
 }
 
 CAMLprim value caml_f16_div(value a, value b) {
     CAMLparam2(a, b);
-    float fa = f16_to_float(F16_val(a));
-    float fb = f16_to_float(F16_val(b));
-    CAMLreturn(alloc_f16(float_to_f16(fa / fb)));
+    CAMLreturn(alloc_f16(F16_DIV(F16_val(a), F16_val(b))));
 }
 
 CAMLprim value caml_f16_rem(value a, value b) {
     CAMLparam2(a, b);
-    float fa = f16_to_float(F16_val(a));
-    float fb = f16_to_float(F16_val(b));
-    CAMLreturn(alloc_f16(float_to_f16(fmodf(fa, fb))));
+    CAMLreturn(alloc_f16(F16_REM(F16_val(a), F16_val(b))));
 }
 
 CAMLprim value caml_f16_to_bits(value v) {
     CAMLparam1(v);
+#if HAS_NATIVE_FLOAT16
+    CAMLreturn(Val_int(F16_TO_BITS(F16_val(v))));
+#else
     CAMLreturn(Val_int(F16_val(v)));
+#endif
 }
 
 CAMLprim value caml_f16_of_bits(value bits) {
     CAMLparam1(bits);
-    CAMLreturn(alloc_f16((f16_t)Int_val(bits)));
+    CAMLreturn(alloc_f16(F16_FROM_BITS((uint16_t)Int_val(bits))));
 }
 
 CAMLprim value caml_f16_to_float(value v) {
     CAMLparam1(v);
-    CAMLreturn(caml_copy_double(f16_to_float(F16_val(v))));
+    CAMLreturn(caml_copy_double(F16_TO_FLOAT(F16_val(v))));
+}
+
+/* Return whether native F16 is being used (for debugging/testing) */
+CAMLprim value caml_f16_is_native(value unit) {
+    CAMLparam1(unit);
+    CAMLreturn(Val_bool(HAS_NATIVE_FLOAT16));
 }
 
 /* ============================================================================
