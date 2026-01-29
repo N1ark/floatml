@@ -1,8 +1,8 @@
 (library
- (name floats)
- (public_name floats)
+ (name floatml)
+ (public_name floatml)
  (libraries zarith)
  (foreign_stubs
   (language c)
-  (names floats_stubs)
+  (names floatml_stubs)
   (flags (:standard -O2))))

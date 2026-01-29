@@ -6,6 +6,7 @@
  * ============================================================================ *)
 module F16 = struct
   type t
+  type bits = int
 
   external of_string : string -> t = "caml_f16_of_string"
   external add : t -> t -> t = "caml_f16_add"
@@ -16,7 +17,6 @@ module F16 = struct
   external to_bits : t -> int = "caml_f16_to_bits"
   external of_bits : int -> t = "caml_f16_of_bits"
   external to_float : t -> float = "caml_f16_to_float"
-  external is_native : unit -> bool = "caml_f16_is_native"
 
   let to_z t = Z.of_int (to_bits t)
 
@@ -32,6 +32,7 @@ end
  * ============================================================================ *)
 module F32 = struct
   type t
+  type bits = int32
 
   external of_string : string -> t = "caml_f32_of_string"
   external add : t -> t -> t = "caml_f32_add"
@@ -57,6 +58,7 @@ end
  * ============================================================================ *)
 module F64 = struct
   type t
+  type bits = int64
 
   external of_string : string -> t = "caml_f64_of_string"
   external add : t -> t -> t = "caml_f64_add"
@@ -82,6 +84,7 @@ end
  * ============================================================================ *)
 module F128 = struct
   type t
+  type bits = int64 * int64  (* low, high *)
 
   external of_string : string -> t = "caml_f128_of_string"
   external add : t -> t -> t = "caml_f128_add"
@@ -93,9 +96,9 @@ module F128 = struct
   external to_bits_high : t -> int64 = "caml_f128_to_bits_high"
   external of_bits_raw : int64 -> int64 -> t = "caml_f128_of_bits"
   external to_float : t -> float = "caml_f128_to_float"
-  external size : unit -> int = "caml_f128_size"
 
-  let of_bits ~low ~high = of_bits_raw low high
+  let to_bits t = (to_bits_low t, to_bits_high t)
+  let of_bits (low, high) = of_bits_raw low high
 
   (** Convert to Z.t representing the full 128-bit value.
       The result is: high * 2^64 + low (treating low as unsigned) *)

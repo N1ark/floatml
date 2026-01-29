@@ -1,5 +1,5 @@
 (lang dune 3.0)
-(name floats)
+(name floatml)
 (version 0.1.0)
 
 (generate_opam_files true)
@@ -10,7 +10,7 @@
 (maintainers "opale.sjostedt@gmail.com")
 
 (package
- (name floats)
+ (name floatml)
  (synopsis "OCaml bindings for f16, f32, f64, f128 float types")
  (description "A library providing arbitrary precision float types with C bindings")
  (depends
