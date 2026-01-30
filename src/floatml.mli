@@ -60,6 +60,9 @@ module type FloatType := sig
   (** Equality comparison (IEEE 754: NaN != NaN) *)
   val eq : t -> t -> bool
 
+  (** Alias for [eq] *)
+  val equal : t -> t -> bool
+
   (** Less than comparison (IEEE 754: NaN comparisons return false) *)
   val lt : t -> t -> bool
 
@@ -72,6 +75,10 @@ module type FloatType := sig
   (** Greater than or equal comparison (IEEE 754: NaN comparisons return false)
   *)
   val ge : t -> t -> bool
+
+  (** Total ordering comparison; returns -1 if x < y, 1 if x > y, and 0 otherwise.
+    {bThis is not IEEE 754 compliant, it is provided for convenience only.} *)
+  val compare : t -> t -> int
 
   (** Convert float to integer with specified size, rounding mode, and
       signedness. Similar to SMT-LIB's fp.to_sbv (signed) and fp.to_ubv

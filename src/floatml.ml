@@ -140,6 +140,8 @@ module F16 = struct
 
   let gt = Fun.flip lt
   let ge = Fun.flip le
+  let equal = eq
+  let compare l r = if lt l r then -1 else if gt l r then 1 else 0
 
   (* Float to integer conversion *)
   external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
@@ -205,6 +207,8 @@ module F32 = struct
 
   let gt = Fun.flip lt
   let ge = Fun.flip le
+  let equal = eq
+  let compare l r = if lt l r then -1 else if gt l r then 1 else 0
 
   (* Float to integer conversion *)
   external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
@@ -270,6 +274,8 @@ module F64 = struct
 
   let gt = Fun.flip lt
   let ge = Fun.flip le
+  let equal = eq
+  let compare l r = if lt l r then -1 else if gt l r then 1 else 0
 
   (* Float to integer conversion *)
   external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
@@ -349,6 +355,8 @@ module F128 = struct
 
   let gt = Fun.flip lt
   let ge = Fun.flip le
+  let equal = eq
+  let compare l r = if lt l r then -1 else if gt l r then 1 else 0
 
   (* Float to integer conversion *)
   external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
@@ -493,6 +501,13 @@ module AnyFloat = struct
   let le = binop_raw ~f16:F16.le ~f32:F32.le ~f64:F64.le ~f128:F128.le
   let gt = binop_raw ~f16:F16.gt ~f32:F32.gt ~f64:F64.gt ~f128:F128.gt
   let ge = binop_raw ~f16:F16.ge ~f32:F32.ge ~f64:F64.ge ~f128:F128.ge
+
+  let equal =
+    binop_raw ~f16:F16.equal ~f32:F32.equal ~f64:F64.equal ~f128:F128.equal
+
+  let compare =
+    binop_raw ~f16:F16.compare ~f32:F32.compare ~f64:F64.compare
+      ~f128:F128.compare
 
   let pp ft t =
     match t with
