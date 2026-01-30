@@ -1,10 +1,11 @@
 (** IEEE 754 rounding modes *)
 type rounding_mode =
-  | NearestEven  (** Round to nearest, ties to even (default IEEE 754 mode) *)
-  | ToZero  (** Round toward zero (truncate) *)
-  | Up  (** Round toward +infinity (ceiling) *)
-  | Down  (** Round toward -infinity (floor) *)
-  | NearestAway  (** Round to nearest, ties away from zero *)
+  | NearestTiesToEven
+      (** Round to nearest, ties to even (default IEEE 754 mode) *)
+  | Truncate  (** Round toward zero *)
+  | Ceil  (** Round toward +infinity *)
+  | Floor  (** Round toward -infinity *)
+  | NearestTiesToAway  (** Round to nearest, ties away from zero *)
 
 (** Integer sizes for float-int conversions *)
 type int_size =

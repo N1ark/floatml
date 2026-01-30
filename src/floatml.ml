@@ -2,11 +2,12 @@
 
 (** IEEE 754 rounding modes *)
 type rounding_mode =
-  | NearestEven  (** Round to nearest, ties to even (default IEEE 754 mode) *)
-  | ToZero  (** Round toward zero (truncate) *)
-  | Up  (** Round toward +infinity (ceiling) *)
-  | Down  (** Round toward -infinity (floor) *)
-  | NearestAway  (** Round to nearest, ties away from zero *)
+  | NearestTiesToEven
+      (** Round to nearest, ties to even (default IEEE 754 mode) *)
+  | Truncate  (** Round toward zero *)
+  | Ceil  (** Round toward +infinity *)
+  | Floor  (** Round toward -infinity *)
+  | NearestTiesToAway  (** Round to nearest, ties away from zero *)
 
 (** Integer sizes for float-int conversions *)
 type int_size =
@@ -26,11 +27,11 @@ let fpclass_of_int = function
 
 (* Convert rounding_mode to int for C *)
 let int_of_rounding_mode = function
-  | NearestEven -> 0
-  | ToZero -> 1
-  | Up -> 2
-  | Down -> 3
-  | NearestAway -> 4
+  | NearestTiesToEven -> 0
+  | Truncate -> 1
+  | Ceil -> 2
+  | Floor -> 3
+  | NearestTiesToAway -> 4
 
 (* Convert int_size to int for C *)
 let int_of_int_size = function
