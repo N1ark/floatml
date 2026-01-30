@@ -1,3 +1,11 @@
+(** IEEE 754 rounding modes *)
+type rounding_mode =
+  | NearestEven   (** Round to nearest, ties to even (default IEEE 754 mode) *)
+  | ToZero        (** Round toward zero (truncate) *)
+  | Up            (** Round toward +infinity (ceiling) *)
+  | Down          (** Round toward -infinity (floor) *)
+  | NearestAway   (** Round to nearest, ties away from zero *)
+
 module type FloatType := sig
     type t
     type bits
@@ -31,6 +39,15 @@ module type FloatType := sig
 
     (** Convert to OCaml float for display *)
     val to_float : t -> float
+
+    (** Classify a floating-point value according to IEEE 754 *)
+    val fpclass : t -> Stdlib.fpclass
+
+    (** Absolute value (IEEE 754 compliant - clears sign bit) *)
+    val abs : t -> t
+
+    (** Round to integer value according to rounding mode *)
+    val round : rounding_mode -> t -> t
 
 
     (* Infix operators *)

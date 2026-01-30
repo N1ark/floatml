@@ -1,6 +1,6 @@
-(** Test file for the floats library with assertions *)
+(** Test file for the floatml library with assertions *)
 
-open Floats
+open Floatml
 
 (** Tolerance for floating-point comparisons *)
 let epsilon = 1e-6
@@ -258,7 +258,6 @@ let test_f64 () =
 
 let test_f128 () =
   print_endline "\n=== Testing F128 (quad-precision) ===";
-  Printf.printf "  (F128 size on this platform: %d bytes)\n" (F128.size ());
 
   let a = F128.of_string "3.5" in
   let b = F128.of_string "1.5" in
@@ -275,9 +274,8 @@ let test_f128 () =
   assert_float_eq "F128 rem" 0.5 (F128.to_float (F128.rem a b));
 
   (* Test round-trip *)
-  let low = F128.to_bits_low a in
-  let high = F128.to_bits_high a in
-  let a' = F128.of_bits ~low ~high in
+  let (low, high) = F128.to_bits a in
+  let a' = F128.of_bits (low, high) in
   assert_float_eq "F128 round-trip" (F128.to_float a) (F128.to_float a');
 
   (* Test to_z produces non-zero value *)
@@ -340,8 +338,156 @@ let test_z_conversions () =
   let z16 = F16.to_z f16 in
   assert_z_eq "F16 1.0 to Z" (Z.of_int 0x3C00) z16
 
+(** Assert fpclass equality *)
+let assert_fpclass_eq msg expected actual =
+  let fpclass_to_string = function
+    | FP_normal -> "Normal"
+    | FP_subnormal -> "Subnormal"
+    | FP_zero -> "Zero"
+    | FP_infinite -> "Infinite"
+    | FP_nan -> "NaN"
+  in
+  assert_true (Printf.sprintf "%s (expected %s, got %s)" msg
+    (fpclass_to_string expected) (fpclass_to_string actual))
+    (expected = actual)
+
+let test_fpclass () =
+  print_endline "\n=== Testing fpclass (IEEE 754 classification) ===";
+
+  (* Test F16 fpclass *)
+  print_endline "  F16 fpclass:";
+  assert_fpclass_eq "F16 fpclass 1.0" FP_normal (F16.fpclass (F16.of_string "1.0"));
+  assert_fpclass_eq "F16 fpclass 0.0" FP_zero (F16.fpclass (F16.of_bits 0x0000));
+  assert_fpclass_eq "F16 fpclass -0.0" FP_zero (F16.fpclass (F16.of_bits 0x8000));
+  assert_fpclass_eq "F16 fpclass inf" FP_infinite (F16.fpclass (F16.of_bits 0x7C00));
+  assert_fpclass_eq "F16 fpclass -inf" FP_infinite (F16.fpclass (F16.of_bits 0xFC00));
+  assert_fpclass_eq "F16 fpclass NaN" FP_nan (F16.fpclass (F16.of_bits 0x7E00));
+  assert_fpclass_eq "F16 fpclass denormal" FP_subnormal (F16.fpclass (F16.of_bits 0x0001));
+
+  (* Test F32 fpclass *)
+  print_endline "  F32 fpclass:";
+  assert_fpclass_eq "F32 fpclass 1.0" FP_normal (F32.fpclass (F32.of_string "1.0"));
+  assert_fpclass_eq "F32 fpclass 0.0" FP_zero (F32.fpclass (F32.of_bits 0x00000000l));
+  assert_fpclass_eq "F32 fpclass -0.0" FP_zero (F32.fpclass (F32.of_bits 0x80000000l));
+  assert_fpclass_eq "F32 fpclass inf" FP_infinite (F32.fpclass (F32.of_bits 0x7F800000l));
+  assert_fpclass_eq "F32 fpclass -inf" FP_infinite (F32.fpclass (F32.of_bits 0xFF800000l));
+  assert_fpclass_eq "F32 fpclass NaN" FP_nan (F32.fpclass (F32.of_string "nan"));
+  assert_fpclass_eq "F32 fpclass denormal" FP_subnormal (F32.fpclass (F32.of_bits 0x00000001l));
+
+  (* Test F64 fpclass *)
+  print_endline "  F64 fpclass:";
+  assert_fpclass_eq "F64 fpclass 1.0" FP_normal (F64.fpclass (F64.of_string "1.0"));
+  assert_fpclass_eq "F64 fpclass 0.0" FP_zero (F64.fpclass (F64.of_bits 0x0000000000000000L));
+  assert_fpclass_eq "F64 fpclass inf" FP_infinite (F64.fpclass (F64.of_bits 0x7FF0000000000000L));
+  assert_fpclass_eq "F64 fpclass NaN" FP_nan (F64.fpclass (F64.of_string "nan"));
+  assert_fpclass_eq "F64 fpclass denormal" FP_subnormal (F64.fpclass (F64.of_bits 0x0000000000000001L));
+
+  (* Test F128 fpclass *)
+  print_endline "  F128 fpclass:";
+  assert_fpclass_eq "F128 fpclass 1.0" FP_normal (F128.fpclass (F128.of_string "1.0"));
+  assert_fpclass_eq "F128 fpclass 0.0" FP_zero (F128.fpclass (F128.of_string "0.0"));
+  assert_fpclass_eq "F128 fpclass inf" FP_infinite (F128.fpclass (F128.of_string "inf"));
+  assert_fpclass_eq "F128 fpclass NaN" FP_nan (F128.fpclass (F128.of_string "nan"));
+    assert_fpclass_eq "F128 fpclass denormal" FP_subnormal (F128.fpclass (F128.of_bits (0x0000000000000001L, 0x0000000000000000L)))
+
+let test_abs () =
+  print_endline "\n=== Testing abs (absolute value) ===";
+
+  (* Test F16 abs *)
+  print_endline "  F16 abs:";
+  assert_float_eq ~eps:epsilon_f16 "F16 abs 3.5" 3.5 (F16.to_float (F16.abs (F16.of_string "3.5")));
+  assert_float_eq ~eps:epsilon_f16 "F16 abs -3.5" 3.5 (F16.to_float (F16.abs (F16.of_string "-3.5")));
+  assert_float_eq "F16 abs 0.0" 0.0 (F16.to_float (F16.abs (F16.of_bits 0x0000)));
+  assert_int_eq "F16 abs -0.0 bits" 0x0000 (F16.to_bits (F16.abs (F16.of_bits 0x8000)));
+  assert_true "F16 abs inf" (is_inf (F16.to_float (F16.abs (F16.of_bits 0x7C00))));
+  assert_true "F16 abs -inf" (is_inf (F16.to_float (F16.abs (F16.of_bits 0xFC00))));
+  assert_int_eq "F16 abs -inf -> +inf" 0x7C00 (F16.to_bits (F16.abs (F16.of_bits 0xFC00)));
+
+  (* Test F32 abs *)
+  print_endline "  F32 abs:";
+  assert_float_eq "F32 abs 3.5" 3.5 (F32.to_float (F32.abs (F32.of_string "3.5")));
+  assert_float_eq "F32 abs -3.5" 3.5 (F32.to_float (F32.abs (F32.of_string "-3.5")));
+  assert_int32_eq "F32 abs -0.0 bits" 0x00000000l (F32.to_bits (F32.abs (F32.of_bits 0x80000000l)));
+
+  (* Test F64 abs *)
+  print_endline "  F64 abs:";
+  assert_float_eq "F64 abs 3.5" 3.5 (F64.to_float (F64.abs (F64.of_string "3.5")));
+  assert_float_eq "F64 abs -3.5" 3.5 (F64.to_float (F64.abs (F64.of_string "-3.5")));
+
+  (* Test F128 abs *)
+  print_endline "  F128 abs:";
+  assert_float_eq "F128 abs 3.5" 3.5 (F128.to_float (F128.abs (F128.of_string "3.5")));
+  assert_float_eq "F128 abs -3.5" 3.5 (F128.to_float (F128.abs (F128.of_string "-3.5")))
+
+let test_round () =
+  print_endline "\n=== Testing round (rounding modes) ===";
+
+  (* Test F16 round *)
+  print_endline "  F16 round:";
+  let f16_2_5 = F16.of_string "2.5" in
+  let f16_3_5 = F16.of_string "3.5" in
+  let f16_neg_2_5 = F16.of_string "-2.5" in
+
+  (* NearestEven: 2.5 -> 2, 3.5 -> 4 (ties to even) *)
+  assert_float_eq ~eps:epsilon_f16 "F16 round NearestEven 2.5" 2.0
+    (F16.to_float (F16.round NearestEven f16_2_5));
+  assert_float_eq ~eps:epsilon_f16 "F16 round NearestEven 3.5" 4.0
+    (F16.to_float (F16.round NearestEven f16_3_5));
+
+  (* ToZero (truncate) *)
+  assert_float_eq ~eps:epsilon_f16 "F16 round ToZero 2.5" 2.0
+    (F16.to_float (F16.round ToZero f16_2_5));
+  assert_float_eq ~eps:epsilon_f16 "F16 round ToZero -2.5" (-2.0)
+    (F16.to_float (F16.round ToZero f16_neg_2_5));
+
+  (* Up (ceiling) *)
+  assert_float_eq ~eps:epsilon_f16 "F16 round Up 2.5" 3.0
+    (F16.to_float (F16.round Up f16_2_5));
+  assert_float_eq ~eps:epsilon_f16 "F16 round Up -2.5" (-2.0)
+    (F16.to_float (F16.round Up f16_neg_2_5));
+
+  (* Down (floor) *)
+  assert_float_eq ~eps:epsilon_f16 "F16 round Down 2.5" 2.0
+    (F16.to_float (F16.round Down f16_2_5));
+  assert_float_eq ~eps:epsilon_f16 "F16 round Down -2.5" (-3.0)
+    (F16.to_float (F16.round Down f16_neg_2_5));
+
+  (* NearestAway: ties away from zero *)
+  assert_float_eq ~eps:epsilon_f16 "F16 round NearestAway 2.5" 3.0
+    (F16.to_float (F16.round NearestAway f16_2_5));
+  assert_float_eq ~eps:epsilon_f16 "F16 round NearestAway -2.5" (-3.0)
+    (F16.to_float (F16.round NearestAway f16_neg_2_5));
+
+  (* Test F32 round *)
+  print_endline "  F32 round:";
+  let f32_2_5 = F32.of_string "2.5" in
+  assert_float_eq "F32 round ToZero 2.5" 2.0 (F32.to_float (F32.round ToZero f32_2_5));
+  assert_float_eq "F32 round Up 2.5" 3.0 (F32.to_float (F32.round Up f32_2_5));
+  assert_float_eq "F32 round Down 2.5" 2.0 (F32.to_float (F32.round Down f32_2_5));
+
+  (* Test F64 round *)
+  print_endline "  F64 round:";
+  let f64_2_5 = F64.of_string "2.5" in
+  assert_float_eq "F64 round ToZero 2.5" 2.0 (F64.to_float (F64.round ToZero f64_2_5));
+  assert_float_eq "F64 round Up 2.5" 3.0 (F64.to_float (F64.round Up f64_2_5));
+  assert_float_eq "F64 round Down 2.5" 2.0 (F64.to_float (F64.round Down f64_2_5));
+
+  (* Test F128 round *)
+  print_endline "  F128 round:";
+  let f128_2_5 = F128.of_string "2.5" in
+  assert_float_eq "F128 round ToZero 2.5" 2.0 (F128.to_float (F128.round ToZero f128_2_5));
+  assert_float_eq "F128 round Up 2.5" 3.0 (F128.to_float (F128.round Up f128_2_5));
+  assert_float_eq "F128 round Down 2.5" 2.0 (F128.to_float (F128.round Down f128_2_5));
+
+  (* Test that special values are preserved *)
+  print_endline "  Special values:";
+  let f32_inf = F32.of_bits 0x7F800000l in
+  let f32_nan = F32.of_string "nan" in
+  assert_true "F32 round preserves inf" (is_inf (F32.to_float (F32.round NearestEven f32_inf)));
+  assert_true "F32 round preserves NaN" (is_nan (F32.to_float (F32.round NearestEven f32_nan)))
+
 let () =
-  print_endline "Running floats library tests...";
+  print_endline "Running floatml library tests...";
 
   test_f16 ();
   test_f16_ieee754 ();
@@ -350,6 +496,9 @@ let () =
   test_f128 ();
   test_special_values ();
   test_z_conversions ();
+  test_fpclass ();
+  test_abs ();
+  test_round ();
 
   Printf.printf "\n=== Results: %d/%d tests passed ===\n" !tests_passed !tests_run;
   if !tests_passed = !tests_run then

@@ -19,6 +19,42 @@
 #include <fenv.h>
 
 /* ============================================================================
+ * Common types and utilities for IEEE-754 compliance
+ * ============================================================================ */
+
+/*
+ * IEEE 754 float classification (matches OCaml's fpclass)
+ * These values must match the OCaml type definition order
+ */
+#define FPCLASS_NORMAL      0
+#define FPCLASS_SUBNORMAL   1
+#define FPCLASS_ZERO        2
+#define FPCLASS_INFINITE    3
+#define FPCLASS_NAN         4
+
+/*
+ * IEEE 754 rounding modes
+ * These values must match the OCaml type definition order
+ */
+#define ROUND_NEAREST_EVEN  0  /* Round to nearest, ties to even (default) */
+#define ROUND_TO_ZERO       1  /* Round toward zero (truncate) */
+#define ROUND_UP            2  /* Round toward +infinity (ceiling) */
+#define ROUND_DOWN          3  /* Round toward -infinity (floor) */
+#define ROUND_NEAREST_AWAY  4  /* Round to nearest, ties away from zero */
+
+/* Map our rounding mode to C fenv rounding mode */
+static int get_fenv_round(int mode) {
+    switch (mode) {
+        case ROUND_NEAREST_EVEN: return FE_TONEAREST;
+        case ROUND_TO_ZERO:      return FE_TOWARDZERO;
+        case ROUND_UP:           return FE_UPWARD;
+        case ROUND_DOWN:         return FE_DOWNWARD;
+        case ROUND_NEAREST_AWAY: return FE_TONEAREST;  /* Approximate - not all platforms support this */
+        default:                 return FE_TONEAREST;
+    }
+}
+
+/* ============================================================================
  * F16 (half-precision) implementation
  * IEEE 754 half-precision: 1 sign bit, 5 exponent bits, 10 mantissa bits
  * 
@@ -314,6 +350,80 @@ CAMLprim value caml_f16_is_native(value unit) {
     CAMLreturn(Val_bool(HAS_NATIVE_FLOAT16));
 }
 
+/* Classify F16 value according to IEEE 754 */
+CAMLprim value caml_f16_fpclass(value v) {
+    CAMLparam1(v);
+    uint16_t bits = F16_TO_BITS(F16_val(v));
+    uint16_t exp = (bits >> 10) & 0x1F;
+    uint16_t mant = bits & 0x3FF;
+    
+    int result;
+    if (exp == 0) {
+        if (mant == 0) {
+            result = FPCLASS_ZERO;
+        } else {
+            result = FPCLASS_SUBNORMAL;
+        }
+    } else if (exp == 0x1F) {
+        if (mant == 0) {
+            result = FPCLASS_INFINITE;
+        } else {
+            result = FPCLASS_NAN;
+        }
+    } else {
+        result = FPCLASS_NORMAL;
+    }
+    CAMLreturn(Val_int(result));
+}
+
+/* Absolute value of F16 - IEEE 754 compliant (just clear sign bit) */
+CAMLprim value caml_f16_abs(value v) {
+    CAMLparam1(v);
+    uint16_t bits = F16_TO_BITS(F16_val(v));
+    bits &= 0x7FFF;  /* Clear sign bit */
+    CAMLreturn(alloc_f16(F16_FROM_BITS(bits)));
+}
+
+/* Round F16 to integer value according to rounding mode */
+CAMLprim value caml_f16_round(value v, value mode) {
+    CAMLparam2(v, mode);
+    int rounding_mode = Int_val(mode);
+    float f = F16_TO_FLOAT(F16_val(v));
+    float result;
+    
+    /* Handle special cases first */
+    if (isnan(f) || isinf(f)) {
+        CAMLreturn(v);  /* NaN and Inf are unchanged */
+    }
+    
+    switch (rounding_mode) {
+        case ROUND_NEAREST_EVEN:
+            result = rintf(f);  /* Uses current rounding mode, but we want ties to even */
+            break;
+        case ROUND_TO_ZERO:
+            result = truncf(f);
+            break;
+        case ROUND_UP:
+            result = ceilf(f);
+            break;
+        case ROUND_DOWN:
+            result = floorf(f);
+            break;
+        case ROUND_NEAREST_AWAY:
+            result = roundf(f);  /* Rounds ties away from zero */
+            break;
+        default:
+            result = rintf(f);
+            break;
+    }
+    
+#if HAS_NATIVE_FLOAT16
+    CAMLreturn(alloc_f16((f16_t)result));
+#else
+    CAMLreturn(alloc_f16(f16_from_float_soft(result)));
+#endif
+}
+
 /* ============================================================================
  * F32 (single-precision) implementation
  * IEEE 754 single-precision: 1 sign bit, 8 exponent bits, 23 mantissa bits
@@ -392,6 +502,74 @@ CAMLprim value caml_f32_to_float(value v) {
     CAMLreturn(caml_copy_double((double)F32_val(v)));
 }
 
+/* Classify F32 value according to IEEE 754 */
+CAMLprim value caml_f32_fpclass(value v) {
+    CAMLparam1(v);
+    f32_t f = F32_val(v);
+    int result;
+    
+    switch (fpclassify(f)) {
+        case FP_ZERO:
+            result = FPCLASS_ZERO;
+            break;
+        case FP_SUBNORMAL:
+            result = FPCLASS_SUBNORMAL;
+            break;
+        case FP_NORMAL:
+            result = FPCLASS_NORMAL;
+            break;
+        case FP_INFINITE:
+            result = FPCLASS_INFINITE;
+            break;
+        case FP_NAN:
+        default:
+            result = FPCLASS_NAN;
+            break;
+    }
+    CAMLreturn(Val_int(result));
+}
+
+/* Absolute value of F32 - IEEE 754 compliant */
+CAMLprim value caml_f32_abs(value v) {
+    CAMLparam1(v);
+    CAMLreturn(alloc_f32(fabsf(F32_val(v))));
+}
+
+/* Round F32 to integer value according to rounding mode */
+CAMLprim value caml_f32_round(value v, value mode) {
+    CAMLparam2(v, mode);
+    int rounding_mode = Int_val(mode);
+    f32_t f = F32_val(v);
+    f32_t result;
+    
+    /* Handle special cases first */
+    if (isnan(f) || isinf(f)) {
+        CAMLreturn(v);  /* NaN and Inf are unchanged */
+    }
+    
+    switch (rounding_mode) {
+        case ROUND_NEAREST_EVEN:
+            result = rintf(f);
+            break;
+        case ROUND_TO_ZERO:
+            result = truncf(f);
+            break;
+        case ROUND_UP:
+            result = ceilf(f);
+            break;
+        case ROUND_DOWN:
+            result = floorf(f);
+            break;
+        case ROUND_NEAREST_AWAY:
+            result = roundf(f);
+            break;
+        default:
+            result = rintf(f);
+            break;
+    }
+    CAMLreturn(alloc_f32(result));
+}
+
 /* ============================================================================
  * F64 (double-precision) implementation
  * IEEE 754 double-precision: 1 sign bit, 11 exponent bits, 52 mantissa bits
@@ -468,6 +646,74 @@ CAMLprim value caml_f64_of_bits(value bits) {
 CAMLprim value caml_f64_to_float(value v) {
     CAMLparam1(v);
     CAMLreturn(caml_copy_double(F64_val(v)));
+}
+
+/* Classify F64 value according to IEEE 754 */
+CAMLprim value caml_f64_fpclass(value v) {
+    CAMLparam1(v);
+    f64_t f = F64_val(v);
+    int result;
+    
+    switch (fpclassify(f)) {
+        case FP_ZERO:
+            result = FPCLASS_ZERO;
+            break;
+        case FP_SUBNORMAL:
+            result = FPCLASS_SUBNORMAL;
+            break;
+        case FP_NORMAL:
+            result = FPCLASS_NORMAL;
+            break;
+        case FP_INFINITE:
+            result = FPCLASS_INFINITE;
+            break;
+        case FP_NAN:
+        default:
+            result = FPCLASS_NAN;
+            break;
+    }
+    CAMLreturn(Val_int(result));
+}
+
+/* Absolute value of F64 - IEEE 754 compliant */
+CAMLprim value caml_f64_abs(value v) {
+    CAMLparam1(v);
+    CAMLreturn(alloc_f64(fabs(F64_val(v))));
+}
+
+/* Round F64 to integer value according to rounding mode */
+CAMLprim value caml_f64_round(value v, value mode) {
+    CAMLparam2(v, mode);
+    int rounding_mode = Int_val(mode);
+    f64_t f = F64_val(v);
+    f64_t result;
+    
+    /* Handle special cases first */
+    if (isnan(f) || isinf(f)) {
+        CAMLreturn(v);  /* NaN and Inf are unchanged */
+    }
+    
+    switch (rounding_mode) {
+        case ROUND_NEAREST_EVEN:
+            result = rint(f);
+            break;
+        case ROUND_TO_ZERO:
+            result = trunc(f);
+            break;
+        case ROUND_UP:
+            result = ceil(f);
+            break;
+        case ROUND_DOWN:
+            result = floor(f);
+            break;
+        case ROUND_NEAREST_AWAY:
+            result = round(f);
+            break;
+        default:
+            result = rint(f);
+            break;
+    }
+    CAMLreturn(alloc_f64(result));
 }
 
 /* ============================================================================
@@ -588,4 +834,126 @@ CAMLprim value caml_f128_to_float(value v) {
 CAMLprim value caml_f128_size(value unit) {
     CAMLparam1(unit);
     CAMLreturn(Val_int(sizeof(f128_t)));
+}
+
+/* Classify F128 value according to IEEE 754 */
+CAMLprim value caml_f128_fpclass(value v) {
+    CAMLparam1(v);
+    f128_t f = F128_val(v);
+    int result;
+    
+#if HAS_FLOAT128
+    /* Use __builtin functions for __float128 if available */
+    if (__builtin_isinf(f)) {
+        result = FPCLASS_INFINITE;
+    } else if (__builtin_isnan(f)) {
+        result = FPCLASS_NAN;
+    } else if (f == 0.0Q) {
+        result = FPCLASS_ZERO;
+    } else {
+        /* Check for subnormal by examining exponent bits */
+        /* For __float128: 1 sign, 15 exp, 112 mantissa */
+        uint64_t bits[2];
+        memcpy(bits, &f, sizeof(f));
+        uint64_t exp = (bits[1] >> 48) & 0x7FFF;
+        if (exp == 0) {
+            result = FPCLASS_SUBNORMAL;
+        } else {
+            result = FPCLASS_NORMAL;
+        }
+    }
+#else
+    /* Use fpclassify for long double */
+    switch (fpclassify(f)) {
+        case FP_ZERO:
+            result = FPCLASS_ZERO;
+            break;
+        case FP_SUBNORMAL:
+            result = FPCLASS_SUBNORMAL;
+            break;
+        case FP_NORMAL:
+            result = FPCLASS_NORMAL;
+            break;
+        case FP_INFINITE:
+            result = FPCLASS_INFINITE;
+            break;
+        case FP_NAN:
+        default:
+            result = FPCLASS_NAN;
+            break;
+    }
+#endif
+    CAMLreturn(Val_int(result));
+}
+
+/* Absolute value of F128 - IEEE 754 compliant */
+CAMLprim value caml_f128_abs(value v) {
+    CAMLparam1(v);
+#if HAS_FLOAT128
+    CAMLreturn(alloc_f128(fabsq(F128_val(v))));
+#else
+    CAMLreturn(alloc_f128(fabsl(F128_val(v))));
+#endif
+}
+
+/* Round F128 to integer value according to rounding mode */
+CAMLprim value caml_f128_round(value v, value mode) {
+    CAMLparam2(v, mode);
+    int rounding_mode = Int_val(mode);
+    f128_t f = F128_val(v);
+    f128_t result;
+    
+    /* Handle special cases first */
+#if HAS_FLOAT128
+    if (__builtin_isnan(f) || __builtin_isinf(f)) {
+        CAMLreturn(v);  /* NaN and Inf are unchanged */
+    }
+    
+    switch (rounding_mode) {
+        case ROUND_NEAREST_EVEN:
+            result = rintq(f);
+            break;
+        case ROUND_TO_ZERO:
+            result = truncq(f);
+            break;
+        case ROUND_UP:
+            result = ceilq(f);
+            break;
+        case ROUND_DOWN:
+            result = floorq(f);
+            break;
+        case ROUND_NEAREST_AWAY:
+            result = roundq(f);
+            break;
+        default:
+            result = rintq(f);
+            break;
+    }
+#else
+    if (isnan(f) || isinf(f)) {
+        CAMLreturn(v);  /* NaN and Inf are unchanged */
+    }
+    
+    switch (rounding_mode) {
+        case ROUND_NEAREST_EVEN:
+            result = rintl(f);
+            break;
+        case ROUND_TO_ZERO:
+            result = truncl(f);
+            break;
+        case ROUND_UP:
+            result = ceill(f);
+            break;
+        case ROUND_DOWN:
+            result = floorl(f);
+            break;
+        case ROUND_NEAREST_AWAY:
+            result = roundl(f);
+            break;
+        default:
+            result = rintl(f);
+            break;
+    }
+#endif
+    CAMLreturn(alloc_f128(result));
 }

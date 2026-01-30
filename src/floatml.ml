@@ -1,5 +1,29 @@
 (** OCaml bindings for f16, f32, f64, f128 floating-point types *)
 
+(** IEEE 754 rounding modes *)
+type rounding_mode =
+  | NearestEven   (** Round to nearest, ties to even (default IEEE 754 mode) *)
+  | ToZero        (** Round toward zero (truncate) *)
+  | Up            (** Round toward +infinity (ceiling) *)
+  | Down          (** Round toward -infinity (floor) *)
+  | NearestAway   (** Round to nearest, ties away from zero *)
+
+(* Convert fpclass int from C to OCaml type *)
+let fpclass_of_int = function
+  | 0 -> FP_normal
+  | 1 -> FP_subnormal
+  | 2 -> FP_zero
+  | 3 -> FP_infinite
+  | _ -> FP_nan
+
+(* Convert rounding_mode to int for C *)
+let int_of_rounding_mode = function
+  | NearestEven -> 0
+  | ToZero -> 1
+  | Up -> 2
+  | Down -> 3
+  | NearestAway -> 4
+
 (* ============================================================================
  * F16 - Half-precision (16-bit) floating-point
  * Uses native _Float16 when available, IEEE-754 compliant software fallback otherwise
@@ -17,8 +41,14 @@ module F16 = struct
   external to_bits : t -> int = "caml_f16_to_bits"
   external of_bits : int -> t = "caml_f16_of_bits"
   external to_float : t -> float = "caml_f16_to_float"
+  external fpclass_raw : t -> int = "caml_f16_fpclass"
+  external abs : t -> t = "caml_f16_abs"
+  external round_raw : t -> int -> t = "caml_f16_round"
 
   let to_z t = Z.of_int (to_bits t)
+
+  let fpclass t = fpclass_of_int (fpclass_raw t)
+  let round mode t = round_raw t (int_of_rounding_mode mode)
 
   let ( + ) = add
   let ( - ) = sub
@@ -43,8 +73,14 @@ module F32 = struct
   external to_bits : t -> int32 = "caml_f32_to_bits"
   external of_bits : int32 -> t = "caml_f32_of_bits"
   external to_float : t -> float = "caml_f32_to_float"
+  external fpclass_raw : t -> int = "caml_f32_fpclass"
+  external abs : t -> t = "caml_f32_abs"
+  external round_raw : t -> int -> t = "caml_f32_round"
 
   let to_z t = Z.of_int32 (to_bits t)
+
+  let fpclass t = fpclass_of_int (fpclass_raw t)
+  let round mode t = round_raw t (int_of_rounding_mode mode)
 
   let ( + ) = add
   let ( - ) = sub
@@ -69,8 +105,14 @@ module F64 = struct
   external to_bits : t -> int64 = "caml_f64_to_bits"
   external of_bits : int64 -> t = "caml_f64_of_bits"
   external to_float : t -> float = "caml_f64_to_float"
+  external fpclass_raw : t -> int = "caml_f64_fpclass"
+  external abs : t -> t = "caml_f64_abs"
+  external round_raw : t -> int -> t = "caml_f64_round"
 
   let to_z t = Z.of_int64 (to_bits t)
+
+  let fpclass t = fpclass_of_int (fpclass_raw t)
+  let round mode t = round_raw t (int_of_rounding_mode mode)
 
   let ( + ) = add
   let ( - ) = sub
@@ -96,6 +138,9 @@ module F128 = struct
   external to_bits_high : t -> int64 = "caml_f128_to_bits_high"
   external of_bits_raw : int64 -> int64 -> t = "caml_f128_of_bits"
   external to_float : t -> float = "caml_f128_to_float"
+  external fpclass_raw : t -> int = "caml_f128_fpclass"
+  external abs : t -> t = "caml_f128_abs"
+  external round_raw : t -> int -> t = "caml_f128_round"
 
   let to_bits t = (to_bits_low t, to_bits_high t)
   let of_bits (low, high) = of_bits_raw low high
@@ -110,6 +155,9 @@ module F128 = struct
     (* high can be treated as signed since it's the upper bits *)
     let z_high = Z.of_int64 high in
     Z.add (Z.shift_left z_high 64) z_low
+
+  let fpclass t = fpclass_of_int (fpclass_raw t)
+  let round mode t = round_raw t (int_of_rounding_mode mode)
 
   let ( + ) = add
   let ( - ) = sub
