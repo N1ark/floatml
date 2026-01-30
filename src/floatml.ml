@@ -138,6 +138,9 @@ module F16 = struct
   external lt : t -> t -> bool = "caml_f16_lt"
   external le : t -> t -> bool = "caml_f16_le"
 
+  let gt = Fun.flip lt
+  let ge = Fun.flip le
+
   (* Float to integer conversion *)
   external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
     = "caml_f16_to_int"
@@ -166,6 +169,8 @@ module F16 = struct
   let ( = ) = eq
   let ( < ) = lt
   let ( <= ) = le
+  let ( > ) = gt
+  let ( >= ) = ge
 end
 
 (* ============================================================================
@@ -196,6 +201,9 @@ module F32 = struct
   external lt : t -> t -> bool = "caml_f32_lt"
   external le : t -> t -> bool = "caml_f32_le"
 
+  let gt = Fun.flip lt
+  let ge = Fun.flip le
+
   (* Float to integer conversion *)
   external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
     = "caml_f32_to_int"
@@ -224,6 +232,8 @@ module F32 = struct
   let ( = ) = eq
   let ( < ) = lt
   let ( <= ) = le
+  let ( > ) = gt
+  let ( >= ) = ge
 end
 
 (* ============================================================================
@@ -254,6 +264,9 @@ module F64 = struct
   external lt : t -> t -> bool = "caml_f64_lt"
   external le : t -> t -> bool = "caml_f64_le"
 
+  let gt = Fun.flip lt
+  let ge = Fun.flip le
+
   (* Float to integer conversion *)
   external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
     = "caml_f64_to_int"
@@ -282,6 +295,8 @@ module F64 = struct
   let ( = ) = eq
   let ( < ) = lt
   let ( <= ) = le
+  let ( > ) = gt
+  let ( >= ) = ge
 end
 
 (* ============================================================================
@@ -326,6 +341,9 @@ module F128 = struct
   external lt : t -> t -> bool = "caml_f128_lt"
   external le : t -> t -> bool = "caml_f128_le"
 
+  let gt = Fun.flip lt
+  let ge = Fun.flip le
+
   (* Float to integer conversion *)
   external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
     = "caml_f128_to_int"
@@ -354,6 +372,8 @@ module F128 = struct
   let ( = ) = eq
   let ( < ) = lt
   let ( <= ) = le
+  let ( > ) = gt
+  let ( >= ) = ge
 end
 
 module AnyFloat = struct
@@ -463,6 +483,8 @@ module AnyFloat = struct
   let eq = binop_raw ~f16:F16.eq ~f32:F32.eq ~f64:F64.eq ~f128:F128.eq
   let lt = binop_raw ~f16:F16.lt ~f32:F32.lt ~f64:F64.lt ~f128:F128.lt
   let le = binop_raw ~f16:F16.le ~f32:F32.le ~f64:F64.le ~f128:F128.le
+  let gt = binop_raw ~f16:F16.gt ~f32:F32.gt ~f64:F64.gt ~f128:F128.gt
+  let ge = binop_raw ~f16:F16.ge ~f32:F32.ge ~f64:F64.ge ~f128:F128.ge
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
@@ -471,4 +493,6 @@ module AnyFloat = struct
   let ( = ) = eq
   let ( < ) = lt
   let ( <= ) = le
+  let ( > ) = gt
+  let ( >= ) = ge
 end

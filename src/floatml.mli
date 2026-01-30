@@ -66,7 +66,12 @@ module type FloatType := sig
   (** Less than or equal comparison (IEEE 754: NaN comparisons return false) *)
   val le : t -> t -> bool
 
+  (** Greater than comparison (IEEE 754: NaN comparisons return false) *)
+  val gt : t -> t -> bool
 
+  (** Greater than or equal comparison (IEEE 754: NaN comparisons return false)
+  *)
+  val ge : t -> t -> bool
 
   (** Convert float to integer with specified size, rounding mode, and
       signedness. Similar to SMT-LIB's fp.to_sbv (signed) and fp.to_ubv
@@ -89,6 +94,8 @@ module type FloatType := sig
   val ( = ) : t -> t -> bool
   val ( < ) : t -> t -> bool
   val ( <= ) : t -> t -> bool
+  val ( > ) : t -> t -> bool
+  val ( >= ) : t -> t -> bool
 end
 
 (** F16 - IEEE 754 half-precision (16-bit) floating-point type
