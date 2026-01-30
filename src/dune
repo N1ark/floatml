@@ -5,4 +5,5 @@
  (foreign_stubs
   (language c)
   (names floatml_stubs)
-  (flags (:standard -O2))))
+  (flags
+   (:standard -O2))))

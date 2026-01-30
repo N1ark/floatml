@@ -2,18 +2,18 @@
 
 (** IEEE 754 rounding modes *)
 type rounding_mode =
-  | NearestEven   (** Round to nearest, ties to even (default IEEE 754 mode) *)
-  | ToZero        (** Round toward zero (truncate) *)
-  | Up            (** Round toward +infinity (ceiling) *)
-  | Down          (** Round toward -infinity (floor) *)
-  | NearestAway   (** Round to nearest, ties away from zero *)
+  | NearestEven  (** Round to nearest, ties to even (default IEEE 754 mode) *)
+  | ToZero  (** Round toward zero (truncate) *)
+  | Up  (** Round toward +infinity (ceiling) *)
+  | Down  (** Round toward -infinity (floor) *)
+  | NearestAway  (** Round to nearest, ties away from zero *)
 
 (** Integer sizes for float-int conversions *)
 type int_size =
-  | Int8    (** 8-bit integer *)
-  | Int16   (** 16-bit integer *)
-  | Int32   (** 32-bit integer *)
-  | Int64   (** 64-bit integer *)
+  | Int8  (** 8-bit integer *)
+  | Int16  (** 16-bit integer *)
+  | Int32  (** 32-bit integer *)
+  | Int64  (** 64-bit integer *)
   | Int128  (** 128-bit integer *)
 
 (* Convert fpclass int from C to OCaml type *)
@@ -64,24 +64,29 @@ let z_to_int64_pair z size ~signed =
       let masked = Z.logand z mask in
       (* Extract lower 32 bits and upper 32 bits separately to avoid overflow *)
       let low32 = Z.to_int64 (Z.logand masked (Z.of_int 0xFFFFFFFF)) in
-      let high32 = Z.to_int64 (Z.logand (Z.shift_right masked 32) (Z.of_int 0xFFFFFFFF)) in
+      let high32 =
+        Z.to_int64 (Z.logand (Z.shift_right masked 32) (Z.of_int 0xFFFFFFFF))
+      in
       let low = Int64.logor low32 (Int64.shift_left high32 32) in
       (low, 0L)
   else
     (* 128-bit case *)
     let mask = Z.pred (Z.shift_left Z.one bits) in
-    let masked = 
-      if signed && Z.sign z < 0 then
-        Z.logand z mask
-      else
-        Z.logand z mask
+    let masked =
+      if signed && Z.sign z < 0 then Z.logand z mask else Z.logand z mask
     in
     (* Extract in 32-bit chunks to avoid overflow *)
     let low32_0 = Z.to_int64 (Z.logand masked (Z.of_int 0xFFFFFFFF)) in
-    let low32_1 = Z.to_int64 (Z.logand (Z.shift_right masked 32) (Z.of_int 0xFFFFFFFF)) in
+    let low32_1 =
+      Z.to_int64 (Z.logand (Z.shift_right masked 32) (Z.of_int 0xFFFFFFFF))
+    in
     let low = Int64.logor low32_0 (Int64.shift_left low32_1 32) in
-    let high32_0 = Z.to_int64 (Z.logand (Z.shift_right masked 64) (Z.of_int 0xFFFFFFFF)) in
-    let high32_1 = Z.to_int64 (Z.logand (Z.shift_right masked 96) (Z.of_int 0xFFFFFFFF)) in
+    let high32_0 =
+      Z.to_int64 (Z.logand (Z.shift_right masked 64) (Z.of_int 0xFFFFFFFF))
+    in
+    let high32_1 =
+      Z.to_int64 (Z.logand (Z.shift_right masked 96) (Z.of_int 0xFFFFFFFF))
+    in
     let high = Int64.logor high32_0 (Int64.shift_left high32_1 32) in
     (low, high)
 
@@ -96,8 +101,7 @@ let int64_pair_to_z low high size ~signed =
     if signed && Z.testbit combined (bits - 1) then
       (* Negative: subtract 2^bits to get the signed value *)
       Z.sub combined (Z.shift_left Z.one bits)
-    else
-      combined
+    else combined
   else if signed then
     (* For signed values <= 64 bits, C returns the value directly as signed int64 *)
     Z.of_int64 low
@@ -127,7 +131,6 @@ module F16 = struct
   external round_raw : t -> int -> t = "caml_f16_round"
 
   let to_z t = Z.of_int (to_bits t)
-
   let fpclass t = fpclass_of_int (fpclass_raw t)
   let round mode t = round_raw t (int_of_rounding_mode mode)
 
@@ -136,21 +139,24 @@ module F16 = struct
   external le : t -> t -> bool = "caml_f16_le"
 
   (* Float to integer conversion *)
-  external to_int_raw : t -> int -> int -> bool -> (int64 * int64 * bool) = "caml_f16_to_int"
-  
+  external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
+    = "caml_f16_to_int"
+
   let float2int t size mode ~signed =
-    let (low, high, success) = to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed in
-    if success then
-      Some (int64_pair_to_z low high size ~signed)
-    else
-      None
+    let low, high, success =
+      to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed
+    in
+    if success then Some (int64_pair_to_z low high size ~signed) else None
 
   (* Integer to float conversion *)
-  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t = "caml_f16_of_int"
-  
+  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t
+    = "caml_f16_of_int"
+
   let int2float z size mode ~signed =
-    let (low, high) = z_to_int64_pair z size ~signed in
-    of_int_raw low high (int_of_int_size size) (int_of_rounding_mode mode) signed
+    let low, high = z_to_int64_pair z size ~signed in
+    of_int_raw low high (int_of_int_size size)
+      (int_of_rounding_mode mode)
+      signed
 
   let ( + ) = add
   let ( - ) = sub
@@ -183,7 +189,6 @@ module F32 = struct
   external round_raw : t -> int -> t = "caml_f32_round"
 
   let to_z t = Z.of_int32 (to_bits t)
-
   let fpclass t = fpclass_of_int (fpclass_raw t)
   let round mode t = round_raw t (int_of_rounding_mode mode)
 
@@ -192,21 +197,24 @@ module F32 = struct
   external le : t -> t -> bool = "caml_f32_le"
 
   (* Float to integer conversion *)
-  external to_int_raw : t -> int -> int -> bool -> (int64 * int64 * bool) = "caml_f32_to_int"
-  
+  external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
+    = "caml_f32_to_int"
+
   let float2int t size mode ~signed =
-    let (low, high, success) = to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed in
-    if success then
-      Some (int64_pair_to_z low high size ~signed)
-    else
-      None
+    let low, high, success =
+      to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed
+    in
+    if success then Some (int64_pair_to_z low high size ~signed) else None
 
   (* Integer to float conversion *)
-  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t = "caml_f32_of_int"
-  
+  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t
+    = "caml_f32_of_int"
+
   let int2float z size mode ~signed =
-    let (low, high) = z_to_int64_pair z size ~signed in
-    of_int_raw low high (int_of_int_size size) (int_of_rounding_mode mode) signed
+    let low, high = z_to_int64_pair z size ~signed in
+    of_int_raw low high (int_of_int_size size)
+      (int_of_rounding_mode mode)
+      signed
 
   let ( + ) = add
   let ( - ) = sub
@@ -239,7 +247,6 @@ module F64 = struct
   external round_raw : t -> int -> t = "caml_f64_round"
 
   let to_z t = Z.of_int64 (to_bits t)
-
   let fpclass t = fpclass_of_int (fpclass_raw t)
   let round mode t = round_raw t (int_of_rounding_mode mode)
 
@@ -248,21 +255,24 @@ module F64 = struct
   external le : t -> t -> bool = "caml_f64_le"
 
   (* Float to integer conversion *)
-  external to_int_raw : t -> int -> int -> bool -> (int64 * int64 * bool) = "caml_f64_to_int"
-  
+  external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
+    = "caml_f64_to_int"
+
   let float2int t size mode ~signed =
-    let (low, high, success) = to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed in
-    if success then
-      Some (int64_pair_to_z low high size ~signed)
-    else
-      None
+    let low, high, success =
+      to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed
+    in
+    if success then Some (int64_pair_to_z low high size ~signed) else None
 
   (* Integer to float conversion *)
-  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t = "caml_f64_of_int"
-  
+  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t
+    = "caml_f64_of_int"
+
   let int2float z size mode ~signed =
-    let (low, high) = z_to_int64_pair z size ~signed in
-    of_int_raw low high (int_of_int_size size) (int_of_rounding_mode mode) signed
+    let low, high = z_to_int64_pair z size ~signed in
+    of_int_raw low high (int_of_int_size size)
+      (int_of_rounding_mode mode)
+      signed
 
   let ( + ) = add
   let ( - ) = sub
@@ -279,7 +289,7 @@ end
  * ============================================================================ *)
 module F128 = struct
   type t
-  type bits = int64 * int64  (* low, high *)
+  type bits = int64 * int64 (* low, high *)
 
   external of_string : string -> t = "caml_f128_of_string"
   external add : t -> t -> t = "caml_f128_add"
@@ -298,8 +308,8 @@ module F128 = struct
   let to_bits t = (to_bits_low t, to_bits_high t)
   let of_bits (low, high) = of_bits_raw low high
 
-  (** Convert to Z.t representing the full 128-bit value.
-      The result is: high * 2^64 + low (treating low as unsigned) *)
+  (** Convert to Z.t representing the full 128-bit value. The result is: high *
+      2^64 + low (treating low as unsigned) *)
   let to_z t =
     let low = to_bits_low t in
     let high = to_bits_high t in
@@ -317,22 +327,142 @@ module F128 = struct
   external le : t -> t -> bool = "caml_f128_le"
 
   (* Float to integer conversion *)
-  external to_int_raw : t -> int -> int -> bool -> (int64 * int64 * bool) = "caml_f128_to_int"
-  
+  external to_int_raw : t -> int -> int -> bool -> int64 * int64 * bool
+    = "caml_f128_to_int"
+
   let float2int t size mode ~signed =
-    let (low, high, success) = to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed in
-    if success then
-      Some (int64_pair_to_z low high size ~signed)
-    else
-      None
+    let low, high, success =
+      to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed
+    in
+    if success then Some (int64_pair_to_z low high size ~signed) else None
 
   (* Integer to float conversion *)
-  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t = "caml_f128_of_int"
-  
-  let int2float z size mode ~signed =
-    let (low, high) = z_to_int64_pair z size ~signed in
-    of_int_raw low high (int_of_int_size size) (int_of_rounding_mode mode) signed
+  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t
+    = "caml_f128_of_int"
 
+  let int2float z size mode ~signed =
+    let low, high = z_to_int64_pair z size ~signed in
+    of_int_raw low high (int_of_int_size size)
+      (int_of_rounding_mode mode)
+      signed
+
+  let ( + ) = add
+  let ( - ) = sub
+  let ( * ) = mul
+  let ( / ) = div
+  let ( mod ) = rem
+  let ( = ) = eq
+  let ( < ) = lt
+  let ( <= ) = le
+end
+
+module AnyFloat = struct
+  type precision = F16 | F32 | F64 | F128
+  type t = F16 of F16.t | F32 of F32.t | F64 of F64.t | F128 of F128.t
+
+  type bits =
+    | BitsF16 of F16.bits
+    | BitsF32 of F32.bits
+    | BitsF64 of F64.bits
+    | BitsF128 of F128.bits
+
+  let f16 x = F16 x
+  let f32 x = F32 x
+  let f64 x = F64 x
+  let f128 x = F128 x
+
+  let[@inline] unop_raw ~f16 ~f32 ~f64 ~f128 = function
+    | F16 x -> f16 x
+    | F32 x -> f32 x
+    | F64 x -> f64 x
+    | F128 x -> f128 x
+
+  let[@inline] binop_raw ~f16 ~f32 ~f64 ~f128 a b =
+    match (a, b) with
+    | F16 x, F16 y -> f16 x y
+    | F32 x, F32 y -> f32 x y
+    | F64 x, F64 y -> f64 x y
+    | F128 x, F128 y -> f128 x y
+    | _ -> invalid_arg "Mismatched float precisions"
+
+  let[@inline] unop ~f16 ~f32 ~f64 ~f128 =
+    unop_raw
+      ~f16:(fun x -> F16 (f16 x))
+      ~f32:(fun x -> F32 (f32 x))
+      ~f64:(fun x -> F64 (f64 x))
+      ~f128:(fun x -> F128 (f128 x))
+
+  let[@inline] binop ~f16 ~f32 ~f64 ~f128 a b =
+    binop_raw
+      ~f16:(fun x y -> F16 (f16 x y))
+      ~f32:(fun x y -> F32 (f32 x y))
+      ~f64:(fun x y -> F64 (f64 x y))
+      ~f128:(fun x y -> F128 (f128 x y))
+      a b
+
+  let of_string : precision -> string -> t = function
+    | F16 -> fun s -> F16 (F16.of_string s)
+    | F32 -> fun s -> F32 (F32.of_string s)
+    | F64 -> fun s -> F64 (F64.of_string s)
+    | F128 -> fun s -> F128 (F128.of_string s)
+
+  let precision : t -> precision = function
+    | F16 _ -> F16
+    | F32 _ -> F32
+    | F64 _ -> F64
+    | F128 _ -> F128
+
+  let add = binop ~f16:F16.add ~f32:F32.add ~f64:F64.add ~f128:F128.add
+  let sub = binop ~f16:F16.sub ~f32:F32.sub ~f64:F64.sub ~f128:F128.sub
+  let mul = binop ~f16:F16.mul ~f32:F32.mul ~f64:F64.mul ~f128:F128.mul
+  let div = binop ~f16:F16.div ~f32:F32.div ~f64:F64.div ~f128:F128.div
+  let rem = binop ~f16:F16.rem ~f32:F32.rem ~f64:F64.rem ~f128:F128.rem
+  let abs = unop ~f16:F16.abs ~f32:F32.abs ~f64:F64.abs ~f128:F128.abs
+
+  let round mode =
+    unop ~f16:(F16.round mode) ~f32:(F32.round mode) ~f64:(F64.round mode)
+      ~f128:(F128.round mode)
+
+  let of_bits : bits -> t = function
+    | BitsF16 b -> F16 (F16.of_bits b)
+    | BitsF32 b -> F32 (F32.of_bits b)
+    | BitsF64 b -> F64 (F64.of_bits b)
+    | BitsF128 b -> F128 (F128.of_bits b)
+
+  let to_bits : t -> bits = function
+    | F16 x -> BitsF16 (F16.to_bits x)
+    | F32 x -> BitsF32 (F32.to_bits x)
+    | F64 x -> BitsF64 (F64.to_bits x)
+    | F128 x -> BitsF128 (F128.to_bits x)
+
+  let to_z : t -> Z.t =
+    unop_raw ~f16:F16.to_z ~f32:F32.to_z ~f64:F64.to_z ~f128:F128.to_z
+
+  let to_float : t -> float =
+    unop_raw ~f16:F16.to_float ~f32:F32.to_float ~f64:F64.to_float
+      ~f128:F128.to_float
+
+  let fpclass : t -> fpclass =
+    unop_raw ~f16:F16.fpclass ~f32:F32.fpclass ~f64:F64.fpclass
+      ~f128:F128.fpclass
+
+  let float2int t size mode ~signed =
+    match t with
+    | F16 x -> F16.float2int x size mode ~signed
+    | F32 x -> F32.float2int x size mode ~signed
+    | F64 x -> F64.float2int x size mode ~signed
+    | F128 x -> F128.float2int x size mode ~signed
+
+  let int2float z size (precision : precision) mode ~signed =
+    match precision with
+    | F16 -> F16 (F16.int2float z size mode ~signed)
+    | F32 -> F32 (F32.int2float z size mode ~signed)
+    | F64 -> F64 (F64.int2float z size mode ~signed)
+    | F128 -> F128 (F128.int2float z size mode ~signed)
+
+  let eq = binop_raw ~f16:F16.eq ~f32:F32.eq ~f64:F64.eq ~f128:F128.eq
+  let lt = binop_raw ~f16:F16.lt ~f32:F32.lt ~f64:F64.lt ~f128:F128.lt
+  let le = binop_raw ~f16:F16.le ~f32:F32.le ~f64:F64.le ~f128:F128.le
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
