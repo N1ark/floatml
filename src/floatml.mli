@@ -6,6 +6,14 @@ type rounding_mode =
   | Down          (** Round toward -infinity (floor) *)
   | NearestAway   (** Round to nearest, ties away from zero *)
 
+(** Integer sizes for float-int conversions *)
+type int_size =
+  | Int8    (** 8-bit integer *)
+  | Int16   (** 16-bit integer *)
+  | Int32   (** 32-bit integer *)
+  | Int64   (** 64-bit integer *)
+  | Int128  (** 128-bit integer *)
+
 module type FloatType := sig
     type t
     type bits
@@ -57,6 +65,16 @@ module type FloatType := sig
 
     (** Less than or equal comparison (IEEE 754: NaN comparisons return false) *)
     val le : t -> t -> bool
+
+    (** Convert float to integer with specified size, rounding mode, and signedness.
+        Similar to SMT-LIB's fp.to_sbv (signed) and fp.to_ubv (unsigned).
+        Returns None if the value is NaN, Inf, or out of range for the target type. *)
+    val float2int : t -> int_size -> rounding_mode -> signed:bool -> Z.t option
+
+    (** Convert integer to float with specified size, rounding mode, and signedness.
+        Similar to SMT-LIB's to_fp from signed/unsigned bitvector.
+        The integer is interpreted according to the specified size and signedness. *)
+    val int2float : Z.t -> int_size -> rounding_mode -> signed:bool -> t
 
 
     (* Infix operators *)

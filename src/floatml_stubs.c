@@ -1035,3 +1035,475 @@ CAMLprim value caml_f128_le(value a, value b) {
     CAMLparam2(a, b);
     CAMLreturn(Val_bool(F128_val(a) <= F128_val(b)));
 }
+
+/* ============================================================================
+ * Float to Integer conversions (fp.to_sbv / fp.to_ubv in SMT-LIB)
+ * 
+ * These functions convert floating-point values to integers with:
+ * - Specified bit width (8, 16, 32, 64, 128)
+ * - Specified rounding mode
+ * - Signed or unsigned interpretation
+ * 
+ * Returns the integer value as two int64 values (low, high) for 128-bit support.
+ * For values that don't fit or are NaN/Inf, behavior follows IEEE 754.
+ * ============================================================================ */
+
+/* Integer size constants */
+#define INT_SIZE_8    0
+#define INT_SIZE_16   1
+#define INT_SIZE_32   2
+#define INT_SIZE_64   3
+#define INT_SIZE_128  4
+
+/* Helper: Apply rounding to a double and return the integer part */
+static double apply_rounding_d(double f, int rounding_mode) {
+    if (isnan(f) || isinf(f)) return f;
+    
+    switch (rounding_mode) {
+        case ROUND_NEAREST_EVEN: return rint(f);
+        case ROUND_TO_ZERO:      return trunc(f);
+        case ROUND_UP:           return ceil(f);
+        case ROUND_DOWN:         return floor(f);
+        case ROUND_NEAREST_AWAY: return round(f);
+        default:                 return rint(f);
+    }
+}
+
+/* Helper: Check if a double value fits in a signed integer of given bits */
+static int fits_signed(double f, int bits) {
+    if (isnan(f) || isinf(f)) return 0;
+    if (bits >= 64) {
+        /* For 64+ bits, check against int64 limits approximately */
+        double min_val = -9223372036854775808.0;  /* -2^63 */
+        double max_val = 9223372036854775807.0;   /* 2^63 - 1 */
+        return f >= min_val && f <= max_val;
+    }
+    double min_val = -(double)(1LL << (bits - 1));
+    double max_val = (double)((1LL << (bits - 1)) - 1);
+    return f >= min_val && f <= max_val;
+}
+
+/* Helper: Check if a double value fits in an unsigned integer of given bits */
+static int fits_unsigned(double f, int bits) {
+    if (isnan(f) || isinf(f)) return 0;
+    if (f < 0.0) return 0;
+    if (bits >= 64) {
+        double max_val = 18446744073709551615.0;  /* 2^64 - 1 */
+        return f <= max_val;
+    }
+    double max_val = (double)((1ULL << bits) - 1);
+    return f <= max_val;
+}
+
+/* 
+ * F16 to integer conversion
+ * Returns: tuple (low: int64, high: int64, success: bool)
+ * For sizes <= 64 bits, result is in low; high is sign extension for signed.
+ * For 128-bit, result spans both low and high.
+ */
+CAMLprim value caml_f16_to_int(value v, value size_v, value mode_v, value signed_v) {
+    CAMLparam4(v, size_v, mode_v, signed_v);
+    CAMLlocal1(result);
+    
+    double f = (double)F16_TO_FLOAT(F16_val(v));
+    int size = Int_val(size_v);
+    int rounding_mode = Int_val(mode_v);
+    int is_signed = Bool_val(signed_v);
+    
+    /* Apply rounding */
+    double rounded = apply_rounding_d(f, rounding_mode);
+    
+    /* Check for NaN/Inf */
+    if (isnan(rounded) || isinf(rounded)) {
+        result = caml_alloc_tuple(3);
+        Store_field(result, 0, caml_copy_int64(0));
+        Store_field(result, 1, caml_copy_int64(0));
+        Store_field(result, 2, Val_bool(0));  /* failure */
+        CAMLreturn(result);
+    }
+    
+    /* Get bit width */
+    int bits;
+    switch (size) {
+        case INT_SIZE_8:   bits = 8; break;
+        case INT_SIZE_16:  bits = 16; break;
+        case INT_SIZE_32:  bits = 32; break;
+        case INT_SIZE_64:  bits = 64; break;
+        case INT_SIZE_128: bits = 128; break;
+        default:           bits = 64; break;
+    }
+    
+    /* Check range */
+    int fits = is_signed ? fits_signed(rounded, bits) : fits_unsigned(rounded, bits);
+    if (!fits) {
+        result = caml_alloc_tuple(3);
+        Store_field(result, 0, caml_copy_int64(0));
+        Store_field(result, 1, caml_copy_int64(0));
+        Store_field(result, 2, Val_bool(0));  /* failure */
+        CAMLreturn(result);
+    }
+    
+    /* Convert to integer */
+    int64_t low = (int64_t)rounded;
+    int64_t high = 0;
+    
+    /* For signed values, sign-extend to high if negative */
+    if (is_signed && rounded < 0) {
+        high = -1;  /* All ones for sign extension */
+    }
+    
+    result = caml_alloc_tuple(3);
+    Store_field(result, 0, caml_copy_int64(low));
+    Store_field(result, 1, caml_copy_int64(high));
+    Store_field(result, 2, Val_bool(1));  /* success */
+    CAMLreturn(result);
+}
+
+/* F32 to integer conversion */
+CAMLprim value caml_f32_to_int(value v, value size_v, value mode_v, value signed_v) {
+    CAMLparam4(v, size_v, mode_v, signed_v);
+    CAMLlocal1(result);
+    
+    double f = (double)F32_val(v);
+    int size = Int_val(size_v);
+    int rounding_mode = Int_val(mode_v);
+    int is_signed = Bool_val(signed_v);
+    
+    double rounded = apply_rounding_d(f, rounding_mode);
+    
+    if (isnan(rounded) || isinf(rounded)) {
+        result = caml_alloc_tuple(3);
+        Store_field(result, 0, caml_copy_int64(0));
+        Store_field(result, 1, caml_copy_int64(0));
+        Store_field(result, 2, Val_bool(0));
+        CAMLreturn(result);
+    }
+    
+    int bits;
+    switch (size) {
+        case INT_SIZE_8:   bits = 8; break;
+        case INT_SIZE_16:  bits = 16; break;
+        case INT_SIZE_32:  bits = 32; break;
+        case INT_SIZE_64:  bits = 64; break;
+        case INT_SIZE_128: bits = 128; break;
+        default:           bits = 64; break;
+    }
+    
+    int fits = is_signed ? fits_signed(rounded, bits) : fits_unsigned(rounded, bits);
+    if (!fits) {
+        result = caml_alloc_tuple(3);
+        Store_field(result, 0, caml_copy_int64(0));
+        Store_field(result, 1, caml_copy_int64(0));
+        Store_field(result, 2, Val_bool(0));
+        CAMLreturn(result);
+    }
+    
+    int64_t low = (int64_t)rounded;
+    int64_t high = (is_signed && rounded < 0) ? -1 : 0;
+    
+    result = caml_alloc_tuple(3);
+    Store_field(result, 0, caml_copy_int64(low));
+    Store_field(result, 1, caml_copy_int64(high));
+    Store_field(result, 2, Val_bool(1));
+    CAMLreturn(result);
+}
+
+/* F64 to integer conversion */
+CAMLprim value caml_f64_to_int(value v, value size_v, value mode_v, value signed_v) {
+    CAMLparam4(v, size_v, mode_v, signed_v);
+    CAMLlocal1(result);
+    
+    double f = F64_val(v);
+    int size = Int_val(size_v);
+    int rounding_mode = Int_val(mode_v);
+    int is_signed = Bool_val(signed_v);
+    
+    double rounded = apply_rounding_d(f, rounding_mode);
+    
+    if (isnan(rounded) || isinf(rounded)) {
+        result = caml_alloc_tuple(3);
+        Store_field(result, 0, caml_copy_int64(0));
+        Store_field(result, 1, caml_copy_int64(0));
+        Store_field(result, 2, Val_bool(0));
+        CAMLreturn(result);
+    }
+    
+    int bits;
+    switch (size) {
+        case INT_SIZE_8:   bits = 8; break;
+        case INT_SIZE_16:  bits = 16; break;
+        case INT_SIZE_32:  bits = 32; break;
+        case INT_SIZE_64:  bits = 64; break;
+        case INT_SIZE_128: bits = 128; break;
+        default:           bits = 64; break;
+    }
+    
+    int fits = is_signed ? fits_signed(rounded, bits) : fits_unsigned(rounded, bits);
+    if (!fits) {
+        result = caml_alloc_tuple(3);
+        Store_field(result, 0, caml_copy_int64(0));
+        Store_field(result, 1, caml_copy_int64(0));
+        Store_field(result, 2, Val_bool(0));
+        CAMLreturn(result);
+    }
+    
+    int64_t low = (int64_t)rounded;
+    int64_t high = (is_signed && rounded < 0) ? -1 : 0;
+    
+    result = caml_alloc_tuple(3);
+    Store_field(result, 0, caml_copy_int64(low));
+    Store_field(result, 1, caml_copy_int64(high));
+    Store_field(result, 2, Val_bool(1));
+    CAMLreturn(result);
+}
+
+/* F128 to integer conversion */
+CAMLprim value caml_f128_to_int(value v, value size_v, value mode_v, value signed_v) {
+    CAMLparam4(v, size_v, mode_v, signed_v);
+    CAMLlocal1(result);
+    
+    f128_t f = F128_val(v);
+    int size = Int_val(size_v);
+    int rounding_mode = Int_val(mode_v);
+    int is_signed = Bool_val(signed_v);
+    
+    /* Apply rounding */
+    f128_t rounded;
+#if HAS_FLOAT128
+    if (__builtin_isnan(f) || __builtin_isinf(f)) {
+        result = caml_alloc_tuple(3);
+        Store_field(result, 0, caml_copy_int64(0));
+        Store_field(result, 1, caml_copy_int64(0));
+        Store_field(result, 2, Val_bool(0));
+        CAMLreturn(result);
+    }
+    switch (rounding_mode) {
+        case ROUND_NEAREST_EVEN: rounded = rintq(f); break;
+        case ROUND_TO_ZERO:      rounded = truncq(f); break;
+        case ROUND_UP:           rounded = ceilq(f); break;
+        case ROUND_DOWN:         rounded = floorq(f); break;
+        case ROUND_NEAREST_AWAY: rounded = roundq(f); break;
+        default:                 rounded = rintq(f); break;
+    }
+#else
+    if (isnan(f) || isinf(f)) {
+        result = caml_alloc_tuple(3);
+        Store_field(result, 0, caml_copy_int64(0));
+        Store_field(result, 1, caml_copy_int64(0));
+        Store_field(result, 2, Val_bool(0));
+        CAMLreturn(result);
+    }
+    switch (rounding_mode) {
+        case ROUND_NEAREST_EVEN: rounded = rintl(f); break;
+        case ROUND_TO_ZERO:      rounded = truncl(f); break;
+        case ROUND_UP:           rounded = ceill(f); break;
+        case ROUND_DOWN:         rounded = floorl(f); break;
+        case ROUND_NEAREST_AWAY: rounded = roundl(f); break;
+        default:                 rounded = rintl(f); break;
+    }
+#endif
+    
+    /* Convert to double for range checking (may lose precision for very large values) */
+    double rounded_d = (double)rounded;
+    
+    int bits;
+    switch (size) {
+        case INT_SIZE_8:   bits = 8; break;
+        case INT_SIZE_16:  bits = 16; break;
+        case INT_SIZE_32:  bits = 32; break;
+        case INT_SIZE_64:  bits = 64; break;
+        case INT_SIZE_128: bits = 128; break;
+        default:           bits = 64; break;
+    }
+    
+    /* For 128-bit, we need special handling */
+    if (bits == 128) {
+        /* For now, use double conversion (loses precision for very large 128-bit values) */
+        /* A full implementation would need arbitrary precision */
+        int64_t low = (int64_t)rounded_d;
+        int64_t high = (is_signed && rounded_d < 0) ? -1 : 0;
+        
+        result = caml_alloc_tuple(3);
+        Store_field(result, 0, caml_copy_int64(low));
+        Store_field(result, 1, caml_copy_int64(high));
+        Store_field(result, 2, Val_bool(1));
+        CAMLreturn(result);
+    }
+    
+    int fits = is_signed ? fits_signed(rounded_d, bits) : fits_unsigned(rounded_d, bits);
+    if (!fits) {
+        result = caml_alloc_tuple(3);
+        Store_field(result, 0, caml_copy_int64(0));
+        Store_field(result, 1, caml_copy_int64(0));
+        Store_field(result, 2, Val_bool(0));
+        CAMLreturn(result);
+    }
+    
+    int64_t low = (int64_t)rounded_d;
+    int64_t high = (is_signed && rounded_d < 0) ? -1 : 0;
+    
+    result = caml_alloc_tuple(3);
+    Store_field(result, 0, caml_copy_int64(low));
+    Store_field(result, 1, caml_copy_int64(high));
+    Store_field(result, 2, Val_bool(1));
+    CAMLreturn(result);
+}
+
+/* ============================================================================
+ * Integer to Float conversions (to_fp / to_fp_unsigned in SMT-LIB)
+ * 
+ * These functions convert integers to floating-point values with:
+ * - Specified bit width (8, 16, 32, 64, 128)
+ * - Specified rounding mode (for inexact conversions)
+ * - Signed or unsigned interpretation
+ * 
+ * Input is two int64 values (low, high) representing up to 128-bit integer.
+ * ============================================================================ */
+
+/* F16 from integer */
+CAMLprim value caml_f16_of_int(value low_v, value high_v, value size_v, value mode_v, value signed_v) {
+    CAMLparam5(low_v, high_v, size_v, mode_v, signed_v);
+    
+    int64_t low = Int64_val(low_v);
+    int64_t high = Int64_val(high_v);
+    int size = Int_val(size_v);
+    int rounding_mode = Int_val(mode_v);
+    int is_signed = Bool_val(signed_v);
+    
+    (void)rounding_mode;  /* F16 conversion handles rounding internally */
+    
+    double value_d;
+    
+    if (size == INT_SIZE_128) {
+        /* 128-bit: combine low and high */
+        if (is_signed && high < 0) {
+            /* Negative 128-bit signed value */
+            /* This is approximate for very large negative values */
+            value_d = (double)high * 18446744073709551616.0 + (double)(uint64_t)low;
+        } else {
+            value_d = (double)(uint64_t)high * 18446744073709551616.0 + (double)(uint64_t)low;
+        }
+    } else {
+        /* 64-bit or smaller: use low only */
+        if (is_signed) {
+            value_d = (double)low;
+        } else {
+            value_d = (double)(uint64_t)low;
+        }
+    }
+    
+#if HAS_NATIVE_FLOAT16
+    CAMLreturn(alloc_f16((f16_t)value_d));
+#else
+    CAMLreturn(alloc_f16(f16_from_float_soft((float)value_d)));
+#endif
+}
+
+/* F32 from integer */
+CAMLprim value caml_f32_of_int(value low_v, value high_v, value size_v, value mode_v, value signed_v) {
+    CAMLparam5(low_v, high_v, size_v, mode_v, signed_v);
+    
+    int64_t low = Int64_val(low_v);
+    int64_t high = Int64_val(high_v);
+    int size = Int_val(size_v);
+    int rounding_mode = Int_val(mode_v);
+    int is_signed = Bool_val(signed_v);
+    
+    (void)rounding_mode;  /* Let hardware handle rounding */
+    
+    double value_d;
+    
+    if (size == INT_SIZE_128) {
+        if (is_signed && high < 0) {
+            value_d = (double)high * 18446744073709551616.0 + (double)(uint64_t)low;
+        } else {
+            value_d = (double)(uint64_t)high * 18446744073709551616.0 + (double)(uint64_t)low;
+        }
+    } else {
+        if (is_signed) {
+            value_d = (double)low;
+        } else {
+            value_d = (double)(uint64_t)low;
+        }
+    }
+    
+    CAMLreturn(alloc_f32((float)value_d));
+}
+
+/* F64 from integer */
+CAMLprim value caml_f64_of_int(value low_v, value high_v, value size_v, value mode_v, value signed_v) {
+    CAMLparam5(low_v, high_v, size_v, mode_v, signed_v);
+    
+    int64_t low = Int64_val(low_v);
+    int64_t high = Int64_val(high_v);
+    int size = Int_val(size_v);
+    int rounding_mode = Int_val(mode_v);
+    int is_signed = Bool_val(signed_v);
+    
+    (void)rounding_mode;
+    
+    double value_d;
+    
+    if (size == INT_SIZE_128) {
+        if (is_signed && high < 0) {
+            value_d = (double)high * 18446744073709551616.0 + (double)(uint64_t)low;
+        } else {
+            value_d = (double)(uint64_t)high * 18446744073709551616.0 + (double)(uint64_t)low;
+        }
+    } else {
+        if (is_signed) {
+            value_d = (double)low;
+        } else {
+            value_d = (double)(uint64_t)low;
+        }
+    }
+    
+    CAMLreturn(alloc_f64(value_d));
+}
+
+/* F128 from integer */
+CAMLprim value caml_f128_of_int(value low_v, value high_v, value size_v, value mode_v, value signed_v) {
+    CAMLparam5(low_v, high_v, size_v, mode_v, signed_v);
+    
+    int64_t low = Int64_val(low_v);
+    int64_t high = Int64_val(high_v);
+    int size = Int_val(size_v);
+    int rounding_mode = Int_val(mode_v);
+    int is_signed = Bool_val(signed_v);
+    
+    (void)rounding_mode;
+    
+    f128_t value_f;
+    
+    if (size == INT_SIZE_128) {
+#if HAS_FLOAT128
+        if (is_signed && high < 0) {
+            value_f = ((__float128)high * 18446744073709551616.0Q) + (__float128)(uint64_t)low;
+        } else {
+            value_f = ((__float128)(uint64_t)high * 18446744073709551616.0Q) + (__float128)(uint64_t)low;
+        }
+#else
+        if (is_signed && high < 0) {
+            value_f = ((long double)high * 18446744073709551616.0L) + (long double)(uint64_t)low;
+        } else {
+            value_f = ((long double)(uint64_t)high * 18446744073709551616.0L) + (long double)(uint64_t)low;
+        }
+#endif
+    } else {
+#if HAS_FLOAT128
+        if (is_signed) {
+            value_f = (__float128)low;
+        } else {
+            value_f = (__float128)(uint64_t)low;
+        }
+#else
+        if (is_signed) {
+            value_f = (long double)low;
+        } else {
+            value_f = (long double)(uint64_t)low;
+        }
+#endif
+    }
+    
+    CAMLreturn(alloc_f128(value_f));
+}

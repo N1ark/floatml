@@ -8,6 +8,14 @@ type rounding_mode =
   | Down          (** Round toward -infinity (floor) *)
   | NearestAway   (** Round to nearest, ties away from zero *)
 
+(** Integer sizes for float-int conversions *)
+type int_size =
+  | Int8    (** 8-bit integer *)
+  | Int16   (** 16-bit integer *)
+  | Int32   (** 32-bit integer *)
+  | Int64   (** 64-bit integer *)
+  | Int128  (** 128-bit integer *)
+
 (* Convert fpclass int from C to OCaml type *)
 let fpclass_of_int = function
   | 0 -> FP_normal
@@ -23,6 +31,79 @@ let int_of_rounding_mode = function
   | Up -> 2
   | Down -> 3
   | NearestAway -> 4
+
+(* Convert int_size to int for C *)
+let int_of_int_size = function
+  | Int8 -> 0
+  | Int16 -> 1
+  | Int32 -> 2
+  | Int64 -> 3
+  | Int128 -> 4
+
+(* Get the number of bits for an int_size *)
+let bits_of_int_size = function
+  | Int8 -> 8
+  | Int16 -> 16
+  | Int32 -> 32
+  | Int64 -> 64
+  | Int128 -> 128
+
+(* Convert Z.t to (low, high) int64 pair for C, with proper handling of signedness *)
+let z_to_int64_pair z size ~signed =
+  let bits = bits_of_int_size size in
+  if bits <= 64 then
+    if signed then
+      (* For signed values, just pass the Z.t value directly as signed int64 *)
+      (* The C code will interpret it correctly *)
+      let low = Z.to_int64 z in
+      let high = if Z.sign z < 0 then -1L else 0L in
+      (low, high)
+    else
+      (* For unsigned values, mask to bit width and extract lower 64 bits *)
+      let mask = Z.pred (Z.shift_left Z.one bits) in
+      let masked = Z.logand z mask in
+      (* Extract lower 32 bits and upper 32 bits separately to avoid overflow *)
+      let low32 = Z.to_int64 (Z.logand masked (Z.of_int 0xFFFFFFFF)) in
+      let high32 = Z.to_int64 (Z.logand (Z.shift_right masked 32) (Z.of_int 0xFFFFFFFF)) in
+      let low = Int64.logor low32 (Int64.shift_left high32 32) in
+      (low, 0L)
+  else
+    (* 128-bit case *)
+    let mask = Z.pred (Z.shift_left Z.one bits) in
+    let masked = 
+      if signed && Z.sign z < 0 then
+        Z.logand z mask
+      else
+        Z.logand z mask
+    in
+    (* Extract in 32-bit chunks to avoid overflow *)
+    let low32_0 = Z.to_int64 (Z.logand masked (Z.of_int 0xFFFFFFFF)) in
+    let low32_1 = Z.to_int64 (Z.logand (Z.shift_right masked 32) (Z.of_int 0xFFFFFFFF)) in
+    let low = Int64.logor low32_0 (Int64.shift_left low32_1 32) in
+    let high32_0 = Z.to_int64 (Z.logand (Z.shift_right masked 64) (Z.of_int 0xFFFFFFFF)) in
+    let high32_1 = Z.to_int64 (Z.logand (Z.shift_right masked 96) (Z.of_int 0xFFFFFFFF)) in
+    let high = Int64.logor high32_0 (Int64.shift_left high32_1 32) in
+    (low, high)
+
+(* Convert (low, high) int64 pair from C to Z.t, with proper handling of signedness *)
+let int64_pair_to_z low high size ~signed =
+  let bits = bits_of_int_size size in
+  if bits > 64 then
+    (* For 128-bit: combine low (unsigned) and high (signed for sign extension) *)
+    let z_low = Z.of_int64_unsigned low in
+    let z_high = Z.of_int64 high in
+    let combined = Z.add (Z.shift_left z_high 64) z_low in
+    if signed && Z.testbit combined (bits - 1) then
+      (* Negative: subtract 2^bits to get the signed value *)
+      Z.sub combined (Z.shift_left Z.one bits)
+    else
+      combined
+  else if signed then
+    (* For signed values <= 64 bits, C returns the value directly as signed int64 *)
+    Z.of_int64 low
+  else
+    (* For unsigned values <= 64 bits, interpret as unsigned *)
+    Z.of_int64_unsigned low
 
 (* ============================================================================
  * F16 - Half-precision (16-bit) floating-point
@@ -53,6 +134,23 @@ module F16 = struct
   external eq : t -> t -> bool = "caml_f16_eq"
   external lt : t -> t -> bool = "caml_f16_lt"
   external le : t -> t -> bool = "caml_f16_le"
+
+  (* Float to integer conversion *)
+  external to_int_raw : t -> int -> int -> bool -> (int64 * int64 * bool) = "caml_f16_to_int"
+  
+  let float2int t size mode ~signed =
+    let (low, high, success) = to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed in
+    if success then
+      Some (int64_pair_to_z low high size ~signed)
+    else
+      None
+
+  (* Integer to float conversion *)
+  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t = "caml_f16_of_int"
+  
+  let int2float z size mode ~signed =
+    let (low, high) = z_to_int64_pair z size ~signed in
+    of_int_raw low high (int_of_int_size size) (int_of_rounding_mode mode) signed
 
   let ( + ) = add
   let ( - ) = sub
@@ -93,6 +191,23 @@ module F32 = struct
   external lt : t -> t -> bool = "caml_f32_lt"
   external le : t -> t -> bool = "caml_f32_le"
 
+  (* Float to integer conversion *)
+  external to_int_raw : t -> int -> int -> bool -> (int64 * int64 * bool) = "caml_f32_to_int"
+  
+  let float2int t size mode ~signed =
+    let (low, high, success) = to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed in
+    if success then
+      Some (int64_pair_to_z low high size ~signed)
+    else
+      None
+
+  (* Integer to float conversion *)
+  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t = "caml_f32_of_int"
+  
+  let int2float z size mode ~signed =
+    let (low, high) = z_to_int64_pair z size ~signed in
+    of_int_raw low high (int_of_int_size size) (int_of_rounding_mode mode) signed
+
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
@@ -131,6 +246,23 @@ module F64 = struct
   external eq : t -> t -> bool = "caml_f64_eq"
   external lt : t -> t -> bool = "caml_f64_lt"
   external le : t -> t -> bool = "caml_f64_le"
+
+  (* Float to integer conversion *)
+  external to_int_raw : t -> int -> int -> bool -> (int64 * int64 * bool) = "caml_f64_to_int"
+  
+  let float2int t size mode ~signed =
+    let (low, high, success) = to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed in
+    if success then
+      Some (int64_pair_to_z low high size ~signed)
+    else
+      None
+
+  (* Integer to float conversion *)
+  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t = "caml_f64_of_int"
+  
+  let int2float z size mode ~signed =
+    let (low, high) = z_to_int64_pair z size ~signed in
+    of_int_raw low high (int_of_int_size size) (int_of_rounding_mode mode) signed
 
   let ( + ) = add
   let ( - ) = sub
@@ -183,6 +315,23 @@ module F128 = struct
   external eq : t -> t -> bool = "caml_f128_eq"
   external lt : t -> t -> bool = "caml_f128_lt"
   external le : t -> t -> bool = "caml_f128_le"
+
+  (* Float to integer conversion *)
+  external to_int_raw : t -> int -> int -> bool -> (int64 * int64 * bool) = "caml_f128_to_int"
+  
+  let float2int t size mode ~signed =
+    let (low, high, success) = to_int_raw t (int_of_int_size size) (int_of_rounding_mode mode) signed in
+    if success then
+      Some (int64_pair_to_z low high size ~signed)
+    else
+      None
+
+  (* Integer to float conversion *)
+  external of_int_raw : int64 -> int64 -> int -> int -> bool -> t = "caml_f128_of_int"
+  
+  let int2float z size mode ~signed =
+    let (low, high) = z_to_int64_pair z size ~signed in
+    of_int_raw low high (int_of_int_size size) (int_of_rounding_mode mode) signed
 
   let ( + ) = add
   let ( - ) = sub
