@@ -50,11 +50,18 @@ module F16 = struct
   let fpclass t = fpclass_of_int (fpclass_raw t)
   let round mode t = round_raw t (int_of_rounding_mode mode)
 
+  external eq : t -> t -> bool = "caml_f16_eq"
+  external lt : t -> t -> bool = "caml_f16_lt"
+  external le : t -> t -> bool = "caml_f16_le"
+
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
   let ( / ) = div
   let ( mod ) = rem
+  let ( = ) = eq
+  let ( < ) = lt
+  let ( <= ) = le
 end
 
 (* ============================================================================
@@ -82,11 +89,18 @@ module F32 = struct
   let fpclass t = fpclass_of_int (fpclass_raw t)
   let round mode t = round_raw t (int_of_rounding_mode mode)
 
+  external eq : t -> t -> bool = "caml_f32_eq"
+  external lt : t -> t -> bool = "caml_f32_lt"
+  external le : t -> t -> bool = "caml_f32_le"
+
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
   let ( / ) = div
   let ( mod ) = rem
+  let ( = ) = eq
+  let ( < ) = lt
+  let ( <= ) = le
 end
 
 (* ============================================================================
@@ -114,11 +128,18 @@ module F64 = struct
   let fpclass t = fpclass_of_int (fpclass_raw t)
   let round mode t = round_raw t (int_of_rounding_mode mode)
 
+  external eq : t -> t -> bool = "caml_f64_eq"
+  external lt : t -> t -> bool = "caml_f64_lt"
+  external le : t -> t -> bool = "caml_f64_le"
+
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
   let ( / ) = div
   let ( mod ) = rem
+  let ( = ) = eq
+  let ( < ) = lt
+  let ( <= ) = le
 end
 
 (* ============================================================================
@@ -159,9 +180,16 @@ module F128 = struct
   let fpclass t = fpclass_of_int (fpclass_raw t)
   let round mode t = round_raw t (int_of_rounding_mode mode)
 
+  external eq : t -> t -> bool = "caml_f128_eq"
+  external lt : t -> t -> bool = "caml_f128_lt"
+  external le : t -> t -> bool = "caml_f128_le"
+
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
   let ( / ) = div
   let ( mod ) = rem
+  let ( = ) = eq
+  let ( < ) = lt
+  let ( <= ) = le
 end

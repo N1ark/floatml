@@ -486,6 +486,86 @@ let test_round () =
   assert_true "F32 round preserves inf" (is_inf (F32.to_float (F32.round NearestEven f32_inf)));
   assert_true "F32 round preserves NaN" (is_nan (F32.to_float (F32.round NearestEven f32_nan)))
 
+let test_comparison () =
+  print_endline "\n=== Testing comparison operators (eq, lt, le) ===";
+
+  (* Test F16 comparisons *)
+  print_endline "  F16 comparisons:";
+  let f16_1 = F16.of_string "1.0" in
+  let f16_2 = F16.of_string "2.0" in
+  let f16_1b = F16.of_string "1.0" in
+  let f16_nan = F16.of_bits 0x7E00 in
+  let f16_zero = F16.of_bits 0x0000 in
+  let f16_neg_zero = F16.of_bits 0x8000 in
+
+  (* Equality tests *)
+  assert_true "F16 1.0 = 1.0" (F16.eq f16_1 f16_1b);
+  assert_true "F16 1.0 <> 2.0" (not (F16.eq f16_1 f16_2));
+  assert_true "F16 NaN <> NaN" (not (F16.eq f16_nan f16_nan));
+  assert_true "F16 +0 = -0" (F16.eq f16_zero f16_neg_zero);
+
+  (* Less than tests *)
+  assert_true "F16 1.0 < 2.0" (F16.lt f16_1 f16_2);
+  assert_true "F16 not (2.0 < 1.0)" (not (F16.lt f16_2 f16_1));
+  assert_true "F16 not (1.0 < 1.0)" (not (F16.lt f16_1 f16_1b));
+  assert_true "F16 not (NaN < 1.0)" (not (F16.lt f16_nan f16_1));
+  assert_true "F16 not (1.0 < NaN)" (not (F16.lt f16_1 f16_nan));
+
+  (* Less than or equal tests *)
+  assert_true "F16 1.0 <= 2.0" (F16.le f16_1 f16_2);
+  assert_true "F16 1.0 <= 1.0" (F16.le f16_1 f16_1b);
+  assert_true "F16 not (2.0 <= 1.0)" (not (F16.le f16_2 f16_1));
+  assert_true "F16 not (NaN <= 1.0)" (not (F16.le f16_nan f16_1));
+
+  (* Infix operator tests *)
+  let open F16 in
+  assert_true "F16 infix 1.0 = 1.0" (f16_1 = f16_1b);
+  assert_true "F16 infix 1.0 < 2.0" (f16_1 < f16_2);
+  assert_true "F16 infix 1.0 <= 1.0" (f16_1 <= f16_1b);
+
+  (* Test F32 comparisons *)
+  print_endline "  F32 comparisons:";
+  let f32_1 = F32.of_string "1.0" in
+  let f32_2 = F32.of_string "2.0" in
+  let f32_nan = F32.of_string "nan" in
+
+  assert_true "F32 1.0 = 1.0" (F32.eq f32_1 f32_1);
+  assert_true "F32 1.0 < 2.0" (F32.lt f32_1 f32_2);
+  assert_true "F32 1.0 <= 2.0" (F32.le f32_1 f32_2);
+  assert_true "F32 NaN <> NaN" (not (F32.eq f32_nan f32_nan));
+  assert_true "F32 not (NaN < NaN)" (not (F32.lt f32_nan f32_nan));
+
+  (* Test F64 comparisons *)
+  print_endline "  F64 comparisons:";
+  let f64_1 = F64.of_string "1.0" in
+  let f64_2 = F64.of_string "2.0" in
+  let f64_nan = F64.of_string "nan" in
+
+  assert_true "F64 1.0 = 1.0" (F64.eq f64_1 f64_1);
+  assert_true "F64 1.0 < 2.0" (F64.lt f64_1 f64_2);
+  assert_true "F64 1.0 <= 2.0" (F64.le f64_1 f64_2);
+  assert_true "F64 NaN <> NaN" (not (F64.eq f64_nan f64_nan));
+
+  (* Test F128 comparisons *)
+  print_endline "  F128 comparisons:";
+  let f128_1 = F128.of_string "1.0" in
+  let f128_2 = F128.of_string "2.0" in
+  let f128_nan = F128.of_string "nan" in
+
+  assert_true "F128 1.0 = 1.0" (F128.eq f128_1 f128_1);
+  assert_true "F128 1.0 < 2.0" (F128.lt f128_1 f128_2);
+  assert_true "F128 1.0 <= 2.0" (F128.le f128_1 f128_2);
+  assert_true "F128 NaN <> NaN" (not (F128.eq f128_nan f128_nan));
+
+  (* Test infinity comparisons *)
+  print_endline "  Infinity comparisons:";
+  let f32_inf = F32.of_bits 0x7F800000l in
+  let f32_neg_inf = F32.of_bits 0xFF800000l in
+  assert_true "F32 1.0 < inf" (F32.lt f32_1 f32_inf);
+  assert_true "F32 -inf < 1.0" (F32.lt f32_neg_inf f32_1);
+  assert_true "F32 inf = inf" (F32.eq f32_inf f32_inf);
+  assert_true "F32 -inf < inf" (F32.lt f32_neg_inf f32_inf)
+
 let () =
   print_endline "Running floatml library tests...";
 
@@ -499,6 +579,7 @@ let () =
   test_fpclass ();
   test_abs ();
   test_round ();
+  test_comparison ();
 
   Printf.printf "\n=== Results: %d/%d tests passed ===\n" !tests_passed !tests_run;
   if !tests_passed = !tests_run then

@@ -49,6 +49,15 @@ module type FloatType := sig
     (** Round to integer value according to rounding mode *)
     val round : rounding_mode -> t -> t
 
+    (** Equality comparison (IEEE 754: NaN != NaN) *)
+    val eq : t -> t -> bool
+
+    (** Less than comparison (IEEE 754: NaN comparisons return false) *)
+    val lt : t -> t -> bool
+
+    (** Less than or equal comparison (IEEE 754: NaN comparisons return false) *)
+    val le : t -> t -> bool
+
 
     (* Infix operators *)
 
@@ -57,6 +66,9 @@ module type FloatType := sig
     val ( * ) : t -> t -> t
     val ( / ) : t -> t -> t
     val ( mod ) : t -> t -> t
+    val ( = ) : t -> t -> bool
+    val ( < ) : t -> t -> bool
+    val ( <= ) : t -> t -> bool
 end
 
 (** F16 - IEEE 754 half-precision (16-bit) floating-point type

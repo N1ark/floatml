@@ -424,6 +424,30 @@ CAMLprim value caml_f16_round(value v, value mode) {
 #endif
 }
 
+/* Equality comparison for F16 (IEEE 754: NaN != NaN) */
+CAMLprim value caml_f16_eq(value a, value b) {
+    CAMLparam2(a, b);
+    float fa = F16_TO_FLOAT(F16_val(a));
+    float fb = F16_TO_FLOAT(F16_val(b));
+    CAMLreturn(Val_bool(fa == fb));
+}
+
+/* Less than comparison for F16 (IEEE 754: NaN comparisons return false) */
+CAMLprim value caml_f16_lt(value a, value b) {
+    CAMLparam2(a, b);
+    float fa = F16_TO_FLOAT(F16_val(a));
+    float fb = F16_TO_FLOAT(F16_val(b));
+    CAMLreturn(Val_bool(fa < fb));
+}
+
+/* Less than or equal comparison for F16 */
+CAMLprim value caml_f16_le(value a, value b) {
+    CAMLparam2(a, b);
+    float fa = F16_TO_FLOAT(F16_val(a));
+    float fb = F16_TO_FLOAT(F16_val(b));
+    CAMLreturn(Val_bool(fa <= fb));
+}
+
 /* ============================================================================
  * F32 (single-precision) implementation
  * IEEE 754 single-precision: 1 sign bit, 8 exponent bits, 23 mantissa bits
@@ -570,6 +594,24 @@ CAMLprim value caml_f32_round(value v, value mode) {
     CAMLreturn(alloc_f32(result));
 }
 
+/* Equality comparison for F32 (IEEE 754: NaN != NaN) */
+CAMLprim value caml_f32_eq(value a, value b) {
+    CAMLparam2(a, b);
+    CAMLreturn(Val_bool(F32_val(a) == F32_val(b)));
+}
+
+/* Less than comparison for F32 (IEEE 754: NaN comparisons return false) */
+CAMLprim value caml_f32_lt(value a, value b) {
+    CAMLparam2(a, b);
+    CAMLreturn(Val_bool(F32_val(a) < F32_val(b)));
+}
+
+/* Less than or equal comparison for F32 */
+CAMLprim value caml_f32_le(value a, value b) {
+    CAMLparam2(a, b);
+    CAMLreturn(Val_bool(F32_val(a) <= F32_val(b)));
+}
+
 /* ============================================================================
  * F64 (double-precision) implementation
  * IEEE 754 double-precision: 1 sign bit, 11 exponent bits, 52 mantissa bits
@@ -714,6 +756,24 @@ CAMLprim value caml_f64_round(value v, value mode) {
             break;
     }
     CAMLreturn(alloc_f64(result));
+}
+
+/* Equality comparison for F64 (IEEE 754: NaN != NaN) */
+CAMLprim value caml_f64_eq(value a, value b) {
+    CAMLparam2(a, b);
+    CAMLreturn(Val_bool(F64_val(a) == F64_val(b)));
+}
+
+/* Less than comparison for F64 (IEEE 754: NaN comparisons return false) */
+CAMLprim value caml_f64_lt(value a, value b) {
+    CAMLparam2(a, b);
+    CAMLreturn(Val_bool(F64_val(a) < F64_val(b)));
+}
+
+/* Less than or equal comparison for F64 */
+CAMLprim value caml_f64_le(value a, value b) {
+    CAMLparam2(a, b);
+    CAMLreturn(Val_bool(F64_val(a) <= F64_val(b)));
 }
 
 /* ============================================================================
@@ -956,4 +1016,22 @@ CAMLprim value caml_f128_round(value v, value mode) {
     }
 #endif
     CAMLreturn(alloc_f128(result));
+}
+
+/* Equality comparison for F128 (IEEE 754: NaN != NaN) */
+CAMLprim value caml_f128_eq(value a, value b) {
+    CAMLparam2(a, b);
+    CAMLreturn(Val_bool(F128_val(a) == F128_val(b)));
+}
+
+/* Less than comparison for F128 (IEEE 754: NaN comparisons return false) */
+CAMLprim value caml_f128_lt(value a, value b) {
+    CAMLparam2(a, b);
+    CAMLreturn(Val_bool(F128_val(a) < F128_val(b)));
+}
+
+/* Less than or equal comparison for F128 */
+CAMLprim value caml_f128_le(value a, value b) {
+    CAMLparam2(a, b);
+    CAMLreturn(Val_bool(F128_val(a) <= F128_val(b)));
 }
