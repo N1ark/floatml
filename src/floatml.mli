@@ -67,6 +67,10 @@ module type FloatType := sig
   (** Alias for [eq] *)
   val equal : t -> t -> bool
 
+  (** Bitwise equality comparison (NaNs are equal if their bit patterns match)
+  *)
+  val bits_equal : t -> t -> bool
+
   (** Less than comparison (IEEE 754: NaN comparisons return false) *)
   val lt : t -> t -> bool
 
