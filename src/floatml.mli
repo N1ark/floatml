@@ -84,6 +84,11 @@ module type FloatType := sig
       integer is interpreted according to the specified size and signedness. *)
   val int2float : Z.t -> int_size -> rounding_mode -> signed:bool -> t
 
+  (** Pretty-printing *)
+  val pp : Format.formatter -> t -> unit
+
+  val show : t -> string
+
   (* Infix operators *)
 
   val ( + ) : t -> t -> t

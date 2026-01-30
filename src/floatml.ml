@@ -161,6 +161,8 @@ module F16 = struct
       (int_of_rounding_mode mode)
       signed
 
+  let pp ft t = Format.fprintf ft "%f" (to_float t)
+  let show t = Format.asprintf "%f" (to_float t)
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
@@ -224,6 +226,8 @@ module F32 = struct
       (int_of_rounding_mode mode)
       signed
 
+  let pp ft t = Format.fprintf ft "%f" (to_float t)
+  let show t = Format.asprintf "%f" (to_float t)
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
@@ -287,6 +291,8 @@ module F64 = struct
       (int_of_rounding_mode mode)
       signed
 
+  let pp ft t = Format.fprintf ft "%f" (to_float t)
+  let show t = Format.asprintf "%f" (to_float t)
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
@@ -364,6 +370,8 @@ module F128 = struct
       (int_of_rounding_mode mode)
       signed
 
+  let pp ft t = Format.fprintf ft "%f" (to_float t)
+  let show t = Format.asprintf "%f" (to_float t)
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
@@ -485,6 +493,15 @@ module AnyFloat = struct
   let le = binop_raw ~f16:F16.le ~f32:F32.le ~f64:F64.le ~f128:F128.le
   let gt = binop_raw ~f16:F16.gt ~f32:F32.gt ~f64:F64.gt ~f128:F128.gt
   let ge = binop_raw ~f16:F16.ge ~f32:F32.ge ~f64:F64.ge ~f128:F128.ge
+
+  let pp ft t =
+    match t with
+    | F16 x -> F16.pp ft x
+    | F32 x -> F32.pp ft x
+    | F64 x -> F64.pp ft x
+    | F128 x -> F128.pp ft x
+
+  let show = unop_raw ~f16:F16.show ~f32:F32.show ~f64:F64.show ~f128:F128.show
   let ( + ) = add
   let ( - ) = sub
   let ( * ) = mul
