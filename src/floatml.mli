@@ -40,6 +40,9 @@ module type FloatType := sig
   (** Convert from some bit representation *)
   val of_bits : bits -> t
 
+  (** Convert from a bit representation in a Z.t *)
+  val of_bits_z : Z.t -> t
+
   (** Convert to some bit representation *)
   val to_bits : t -> bits
 
@@ -146,6 +149,7 @@ module AnyFloat : sig
   val f64 : F64.t -> t
   val f128 : F128.t -> t
   val of_string : precision -> string -> t
+  val of_bits_z : precision -> Z.t -> t
 
   val int2float :
     Z.t -> int_size -> precision -> rounding_mode -> signed:bool -> t

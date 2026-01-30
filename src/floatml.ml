@@ -131,6 +131,7 @@ module F16 = struct
   external abs : t -> t = "caml_f16_abs"
   external round_raw : t -> int -> t = "caml_f16_round"
 
+  let of_bits_z z = of_bits (Z.to_int z)
   let to_z t = Z.of_int (to_bits t)
   let fpclass t = fpclass_of_int (fpclass_raw t)
   let round mode t = round_raw t (int_of_rounding_mode mode)
@@ -198,6 +199,7 @@ module F32 = struct
   external abs : t -> t = "caml_f32_abs"
   external round_raw : t -> int -> t = "caml_f32_round"
 
+  let of_bits_z z = of_bits (Z.to_int32_unsigned z)
   let to_z t = Z.of_int32 (to_bits t)
   let fpclass t = fpclass_of_int (fpclass_raw t)
   let round mode t = round_raw t (int_of_rounding_mode mode)
@@ -265,6 +267,7 @@ module F64 = struct
   external abs : t -> t = "caml_f64_abs"
   external round_raw : t -> int -> t = "caml_f64_round"
 
+  let of_bits_z z = of_bits (Z.to_int64_unsigned z)
   let to_z t = Z.of_int64 (to_bits t)
   let fpclass t = fpclass_of_int (fpclass_raw t)
   let round mode t = round_raw t (int_of_rounding_mode mode)
@@ -335,6 +338,10 @@ module F128 = struct
 
   let to_bits t = (to_bits_low t, to_bits_high t)
   let of_bits (low, high) = of_bits_raw low high
+
+  let of_bits_z z =
+    let low, high = z_to_int64_pair z Int128 ~signed:false in
+    of_bits_raw low high
 
   (** Convert to Z.t representing the full 128-bit value. The result is: high *
       2^64 + low (treating low as unsigned) *)
@@ -465,6 +472,12 @@ module AnyFloat = struct
     | BitsF32 b -> F32 (F32.of_bits b)
     | BitsF64 b -> F64 (F64.of_bits b)
     | BitsF128 b -> F128 (F128.of_bits b)
+
+  let of_bits_z : precision -> Z.t -> t = function
+    | F16 -> fun z -> F16 (F16.of_bits_z z)
+    | F32 -> fun z -> F32 (F32.of_bits_z z)
+    | F64 -> fun z -> F64 (F64.of_bits_z z)
+    | F128 -> fun z -> F128 (F128.of_bits_z z)
 
   let to_bits : t -> bits = function
     | F16 x -> BitsF16 (F16.to_bits x)
